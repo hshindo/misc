@@ -1,2 +1,2 @@
 # misc
-Some codes related to parsing, bayes modeling written in Nemerle.
+Some codes related to parsing, nonparametric bayesian modeling written in Nemerle.
