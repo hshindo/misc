@@ -1,0 +1,103 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using Haplon.Collections
+using Nemerle.Imperative
+
+namespace Haplon.NLP.Resources
+    
+    public static class HeadRule
+        LeftRules: Dictionary[string, array[string]] = Dictionary()
+        RightRules: Dictionary[string, array[string]] = Dictionary()
+        
+        this()
+            LeftRules.Add("ADJP", array["NNS", "QP", "NN", "$", "ADVP", "JJ", "VBN", "VBG", "ADJP", "JJR", "NP", "JJS", "DT", "FW", "RBR", "RBS", "SBAR", "RB"])
+            RightRules.Add("ADVP", array["RB", "RBR", "RBS", "FW", "ADVP", "TO", "CD", "JJR", "JJ", "IN", "NP", "JJS", "NN"])
+            RightRules.Add("CONJP", array["CC", "RB", "IN"])
+            RightRules.Add("FRAG", array[])
+            LeftRules.Add("INTJ", array[])
+            RightRules.Add("LST", array["LS", ":"])
+            LeftRules.Add("NAC", array["NN", "NNS", "NNP", "NNPS", "NP", "NAC", "EX", "$", "CD", "QP", "PRP", "VBG", "JJ", "JJS", "JJR", "ADJP", "FW"])
+            LeftRules.Add("NX", array[])
+			// should prefer JJ? (PP (JJ such) (IN as) (NP (NN crocidolite)))
+            RightRules.Add("PP", array["IN", "TO", "VBG", "VBN", "RP", "FW"])
+            LeftRules.Add("PRN", array[])
+            RightRules.Add("PRT", array["RP"])
+            LeftRules.Add("QP", array["$", "IN", "NNS", "NN", "JJ", "RB", "DT", "CD", "NCD", "QP", "JJR", "JJS"])
+            RightRules.Add("RRC", array["VP", "NP", "ADVP", "ADJP", "PP"])
+            LeftRules.Add("S", array["TO", "IN", "VP", "S", "SBAR", "ADJP", "UCP", "NP"])
+            LeftRules.Add("SBAR", array["WHNP", "WHPP", "WHADVP", "WHADJP", "IN", "DT", "S", "SQ", "SINV", "SBAR", "FRAG"])
+            LeftRules.Add("SBARQ", array["SQ", "S", "SINV", "SBARQ", "FRAG"])
+            LeftRules.Add("SINV", array["VBZ", "VBD", "VBP", "VB", "MD", "VP", "S", "SINV", "ADJP", "NP"])
+            LeftRules.Add("SQ", array["VBZ", "VBD", "VBP", "VB", "MD", "VP", "SQ"])
+            RightRules.Add("UCP", array[])
+            LeftRules.Add("VP", array["TO", "VBD", "VBN", "MD", "VBZ", "VB", "VBG", "VBP", "AUX", "AUXG", "VP", "ADJP", "NN", "NNS", "NP"])
+            LeftRules.Add("WHADJP", array["CC", "WRB", "JJ", "ADJP"])
+            RightRules.Add("WHADVP", array["CC", "WRB"])
+            LeftRules.Add("WHNP", array["WDT", "WP", "WP$", "WHADJP", "WHPP", "WHNP"])
+            RightRules.Add("WHPP", array["IN", "TO", "FW"])
+            RightRules.Add("X", array[])
+            RightRules.Add("XS", array["IN"])
+            
+        public Append(node: TreeNode[string]): void
+            def i = Find(node)
+            when (i >= 0) node[i].Value = node[i].Value + "-H"
+            
+        public AppendAll(root: TreeNode[string]): void { root.Topdown.Iter(Append) }
+            
+        public Find(node: TreeNode[string]): int
+            def index =
+                if (node.Count == 0) -1
+                else if (node.Count == 1) 0
+                else
+                    def key = node.Value
+                    if (key == "NP") FindNP(node.Children)
+                    else if (LeftRules.ContainsKey(key)) Left(node.Children, LeftRules[key])
+                    else if (RightRules.ContainsKey(key)) Right(node.Children, RightRules[key])
+                    else 0
+            PostProcess(node.Children, index)
+                 
+        Left(nodes: array[TreeNode[string]], candidates: array[string]): int
+            when (candidates.Length == 0) return 0
+            foreach (cand in candidates)
+                def i = $[0 .. nodes.Length - 1].Find(it => nodes[it].Value == cand)
+                when (i.IsSome) return i.Value
+            0
+            
+        Right(nodes: array[TreeNode[string]], candidates: array[string]): int
+            when (candidates.Length == 0) return nodes.Length - 1
+            foreach (cand in candidates)
+                def i = $[nodes.Length - 1, nodes.Length - 2 .. 0].Find(it => nodes[it].Value == cand)
+                when (i.IsSome) return i.Value
+            nodes.Length - 1
+            
+        FindNP(nodes: array[TreeNode[string]]): int
+            def left = $[0 .. nodes.Length - 1]
+            def right = $[nodes.Length - 1, nodes.Length - 2 .. 0]
+            when (nodes.Last().Value == "POS") return nodes.Length - 1
+            mutable hash = HashSet(array["NN", "NNP", "NNPS", "NNS", "NX", "POS", "JJR"])
+            foreach (i in right) when (hash.Contains(nodes[i].Value)) return i
+            hash = HashSet(array["NP"])
+            foreach (i in left) when (hash.Contains(nodes[i].Value)) return i
+            hash = HashSet(array["$", "ADJP", "PRN"])
+            foreach (i in right) when (hash.Contains(nodes[i].Value)) return i
+            hash = HashSet(array["CD"])
+            foreach (i in right) when (hash.Contains(nodes[i].Value)) return i
+            hash = HashSet(array["JJ", "JJS", "RB", "QP"])
+            foreach (i in right) when (hash.Contains(nodes[i].Value)) return i
+            nodes.Length - 1
+            
+        // from stanford parser. should be modified.
+        PostProcess(nodes: array[TreeNode[string]], index: int): int
+            def punct = HashSet(array["''", "``", "-LRB-", "-RRB-", ".", ":", ","])
+            if (index < 2) index
+            else
+                def v = nodes[index - 1].Value
+                if (v == "CC" || v == "CONJP")
+                    mutable i = index - 2
+                    def node = nodes[i]
+                    while (i >= 0 && node.IsPre && punct.Contains(node.Value)) i--
+                    if (i >= 0) i
+                    else index
+                else index
+                

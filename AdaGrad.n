@@ -1,0 +1,21 @@
+﻿#pragma indent
+using System
+
+namespace Jukai.Learning
+    
+    public class AdaGrad
+        Rate: double = 0.1
+        Data: array[double]
+        SqGrads: array[double]
+        
+        public this(data: array[double])
+            Data = data
+            SqGrads = array(Data.Length)
+            
+        public Clear(): void
+            SqGrads.Clear()
+            
+        public Update(grads: array[double]): void
+            for (mutable i = 0; i < Data.Length; i++)
+                SqGrads[i] += grads[i] * grads[i]
+                Data[i] -= Rate * grads[i] / (1.0e-10 + Math.Sqrt(SqGrads[i]))

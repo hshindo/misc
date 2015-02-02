@@ -1,0 +1,116 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.IO
+using System.Linq
+using Nemerle.Imperative
+
+namespace Jukai.Collections
+    
+    public class DoubleArray
+        Nodes: array[Node] { get; set }
+        NextCheck: int { get; set }
+        LeafCode: int = -1
+        public Count: int { get; private set }
+        
+        Length: int { get Nodes.Length }
+        Item[i: int]: Node { get Nodes[i]; set Nodes[i] = value }
+        public Item[key: array[int]]: int
+            get
+                mutable id = 0
+                foreach (code in key)
+                    def nextId = Find(id, code)
+                    when (nextId < 0) throw KeyNotFoundException()
+                    id = nextId
+                Value(id)
+        
+        // TODO: offset of code should not be hard-coded.
+        public this(data: array[array[int]])
+            def distinct(start: int, end: int, depth: int): List[int]
+                def indices = List()
+                when (start > end) return indices
+                indices.Add(start)
+                for (mutable i = start + 1; i <= end; i++)
+                    when (data[i][depth] != data[i - 1][depth]) indices.Add(i)
+                indices
+                
+            Array.Sort(data, Array.Compare)
+            Resize(data.Length * 2)
+            this[0] = Node(0, 1) // top node id is 0
+            NextCheck = 1
+            
+            mutable maxDepth = 0
+            def stack = Stack()
+            (0, 0, data.Length - 1, 0) |> stack.Push
+            while (stack.Count > 0)
+                def (id, start, end, depth) = stack.Pop()
+                when (depth > maxDepth)
+                    maxDepth = depth
+                    // Console.WriteLine($"$(depth)")
+                def hasLeaf = data[start].Length == depth
+
+                def indices = distinct(if (hasLeaf) start + 1 else start, end, depth)
+                def codes = List(indices.Count + 1)
+                when (hasLeaf) codes.Add(LeafCode)
+                indices.ForEach(i => data[i][depth] |> codes.Add)
+                Append(id, codes)
+                
+                indices.Add(end + 1)
+                for (mutable i = indices.Count - 2; i >= 0; i--)
+                    def nextId = Find(id, data[indices[i]][depth])
+                    assert(nextId >= 0)
+                    (nextId, indices[i], indices[i + 1] - 1, depth + 1) |> stack.Push
+        
+        public Find(code: int): int { Find(0, code) }
+        public Find(id: int, code: int): int
+            def nextId = this[id].Offset + code
+            if (nextId >= Length || this[nextId].Check != id) -1
+            else nextId
+            
+        public Value(id: int): int
+            def nextId = Find(id, LeafCode)
+            when (nextId < 0) return -1
+            this[nextId].Value
+            
+        Append(parent: int, codes: List[int]): void
+            mutable nonEmpty = 0
+            mutable id = NextCheck - 1
+            while (true)
+                id++
+                def offset = id - codes[0]
+                while ((offset + codes[codes.Count - 1]) >= Length) Resize(Length * 2)
+                when (this[id].IsUsed) { nonEmpty++; continue }
+                when (offset < 0) continue
+                
+                when (codes.TrueForAll(c => !this[offset + c].IsUsed))
+                    this[parent] = Node(offset, this[parent].Check)
+                    foreach (c in codes)
+                        def o =
+                            if (c == LeafCode) { Count++; -Count }
+                            else 1
+                        this[offset + c] = Node(o, parent)
+                    break
+            def alpha = (nonEmpty: double) / (id - NextCheck + 1)
+            when (alpha > 0.9) NextCheck = id
+                
+        Resize(size: int): void
+            def temp = array(size)
+            when (Nodes != null) Array.Copy(Nodes, temp, Nodes.Length)
+            Nodes = temp
+            
+        public static Test(): void
+            def path = @"C:\Users\hshindo\Desktop\test.words"
+            def data = File.ReadLines(path).Select(l => l.ToCharArray().Map(c => c:> int)).ToArray()
+            def trie = DoubleArray(data)
+            
+            //foreach (key in data)
+            //    Console.WriteLine(trie[key])
+            
+        struct Node
+            public Offset: int
+            public Check: int
+            
+            public IsUsed: bool { get Offset | Check != 0 }
+            public Value: int { get -Offset - 1 } // only for leaf
+            
+            public this(offset: int, check: int) { (Offset, Check) = (offset, check) }

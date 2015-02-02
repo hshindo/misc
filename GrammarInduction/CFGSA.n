@@ -1,0 +1,162 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using Haplon.Collections
+using Haplon.Numerics
+using Haplon.Numerics.Statistics
+using Nemerle.Imperative
+
+namespace Haplon.NLP.Grammars
+
+    // Head-driven 3-ary tree transformation
+    // p(X->AHB) => p(X->H) * p(^X-L->A) * p(^X-R->B)
+    public class CFGSA
+        LabelTable: IdTable[string] = IdTable()
+        ObsTrees: array[TreeNode[ObsNode]]
+        NontermCount: int
+        TermCount: int
+
+        HeadDists: array[PYCRP] // [root] -> [symbol]
+        LeftDists: array[PYCRP] // [root] -> [symbol]
+        RightDists: array[PYCRP] // [root] -> [symbol]
+        
+        public this(data: array[TreeNode[string]])
+            ObsTrees = data.Map(t => t.MapAll(ObsNode))
+            ObsTrees.Iter(t => t.Topdown.NonLeaf().Iter(n => n.Value.Id = LabelTable.Add(n.Value.Label)))
+            NontermCount = LabelTable.Count
+            ObsTrees.Iter(t => t.Leaves.Iter(n => n.Value.Id = LabelTable.Add(n.Value.Label)))
+            TermCount = LabelTable.Count - NontermCount
+            
+            HeadDists = $[1 .. NontermCount].MapToArray(_ => PYCRP())
+            LeftDists = $[1 .. NontermCount].MapToArray(_ => PYCRP())
+            RightDists = $[1 .. NontermCount].MapToArray(_ => PYCRP())
+            
+            def init(node: TreeNode[ObsNode])
+                AddProb(node)    
+            ObsTrees.Iter(it => it.Bottomup.NonLeaf().Iter(init))
+        
+        public Gibbs(iterCount: int): void
+            def nodes = ObsTrees.FlatMap(t => t.Topdown).Filter(n => !n.Value.IsFixed).ToArray()
+            foreach (iter in [0 .. iterCount - 1])
+                when (iter % 10 == 0) Update()
+                PrintLog(iter)
+                nodes.Shuffle()
+                nodes.Iter(Sample) 
+            Update()
+            PrintLog(iterCount)
+            def trans = Transform().Map(t => t.ToString())
+            IO.File.WriteAllLines("trans.txt", trans)
+            
+        PrintLog(iter: int): void
+            when (iter == 0)
+                Console.WriteLine("# Tree: {0}", ObsTrees.Length)
+                Console.WriteLine("# Nonterminal: {0}", NontermCount)
+                Console.WriteLine("# Terminal: {0}", TermCount)
+            when (iter % 10 == 0)
+                def likelihood = array[HeadDists, LeftDists, RightDists].Map(dists => dists.Sum(d => d.LogLikelihood(): double)).Sum()
+                Console.WriteLine($"$(iter)\t$(likelihood)")
+            
+        Transform(): void
+            def conv(node: TreeNode[ObsNode])
+                def kids = List()
+                def l = $[0 .. node.Value.HeadIndex-1].MapToArray(i => node[i])
+                when (l.Length > 0) kids.Add(TreeNode(node.Value.ToBar(), l))
+                kids.Add(TreeNode(node[node.Value.HeadIndex].Value))
+                def r = $[node.Value.HeadIndex+1 .. node.Count-1].MapToArray(i => node[i])
+                when (r.Length > 0) kids.Add(TreeNode(node.Value.ToBar(), l))
+            
+            def conv(node: TreeNode[ObsNode])
+                if (node.IsRoot || node.IsLeaf) node.Value.Label
+                else if (ReferenceEquals(node, node.Parent[node.Parent.Value.HeadIndex])) node.Value.Label + "-H"
+                else node.Value.Label
+            ObsTrees.Map(t => t.MapAll(conv))
+                
+        //Transform(): array[TreeNode[string]]
+        //    def transform(node: TreeNode[string * bool])
+        //        when (node.Children.ForAll(n => n.Value[1] == false)) return
+        //        def kids = List(node.Count)
+        //        mutable i = 0
+        //        while (i < node.Count)
+        //            if (node[i].Value[1])
+        //                def l = List()
+        //                while (i < node.Count && node[i].Value[1])
+        //                    l.Add(node[i])
+        //                    i++
+        //                def bar = TreeNode((TreeNode.ToVirtual(node.Value[0]), false), l.ToArray())
+        //                bar.BinarizeRight(v => (TreeNode.ToVirtual(v[0]), false))
+        //                kids.Add(bar) // create bar symbol
+        //            else
+        //                kids.Add(node[i])
+        //                i++
+        //        node.SetChildren(kids.ToArray())
+        //    def trees = ObsTrees.Map(t => t.MapAll(n => (n.Value.Label, n.Value.IsAdj)))
+        //    trees.Iter(t => t.Bottomup.Filter(n => n.IsInter).Iter(transform))
+        //    trees.Map(t => t.MapAll(n => n.Value[0]))
+                     
+        AddProb(node: TreeNode[ObsNode]): void
+            def hindex = node.Value.HeadIndex
+            for (mutable i = 0; i < node.Count; i++)
+                def id = node[i].Value.Id
+                if (i < hindex) LeftDists[node.Value.Id].Add(id)
+                else if (i > hindex) RightDists[node.Value.Id].Add(id)
+                else HeadDists[node.Value.Id].Add(id)
+            
+        RemoveProb(node: TreeNode[ObsNode]): void
+            def hindex = node.Value.HeadIndex
+            for (mutable i = 0; i < node.Count; i++)
+                def id = node[i].Value.Id
+                if (i < hindex) LeftDists[node.Value.Id].Remove(id)
+                else if (i > hindex) RightDists[node.Value.Id].Remove(id)
+                else HeadDists[node.Value.Id].Remove(id)
+                
+        Prob(node: TreeNode[ObsNode]): double
+            def hindex = node.Value.HeadIndex
+            mutable p = 1.0
+            for (mutable i = 0; i < node.Count; i++)
+                def id = node[i].Value.Id
+                p *=
+                    if (i < hindex) LeftDists[node.Value.Id].Prob(id)
+                    else if (i > hindex) RightDists[node.Value.Id].Prob(id)
+                    else HeadDists[node.Value.Id].Prob(id)
+            assert(p > 0.0 && p < 1.00001)
+            p
+                
+        Sample(node: TreeNode[ObsNode]): void
+            RemoveProb(node)
+            def probs = array(node.Count)
+            for (mutable i = 0; i < node.Count; i++)
+                node.Value.HeadIndex = i
+                probs[i] = Prob(node)
+                    
+            def index = probs.Sample()
+            node.Value.HeadIndex = index
+            AddProb(node)
+            
+        Update(): void
+            array[HeadDists, LeftDists, RightDists].Iter(dists => dists.Iter(d => d.Update()))
+            
+        class ObsNode
+            public Label: string
+            public Id: int { get; set; }
+            public IsFixed: bool { get; set; }
+            public HeadIndex: int { get; set; }
+            public IsBar: bool { get; private set; }
+            
+            public this(node: TreeNode[string])
+                Label = node.Value
+                Id = -1
+                HeadIndex = if (node.IsLeaf) -1 else 0
+                IsFixed = node.Count <= 2
+                when (!IsFixed) HeadIndex = Random.Generator.Next(node.Count)
+            
+            public this(label: string) { Label = label }
+                
+            public ToBar(): ObsNode
+                def x = ObsNode(Label)
+                x.Id = Id
+                x.IsFixed = false
+                x.HeadIndex = 0
+                x.IsBar = true
+                x
+                
+            public override ToString(): string { $"$(Label)-$(HeadIndex)" }

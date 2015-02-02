@@ -1,0 +1,69 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.Linq
+using System.Linq.Enumerable
+using Nemerle.Imperative
+
+namespace Jukai
+    
+    public class Perceptron
+        Dec: Decoder = Decoder()
+        
+        public this(data: array[array[Token]])
+            foreach (i in Range(0, data.Length))
+                when (i % 100 == 0) Console.WriteLine(i)
+                Dec.Decode(data[i])
+        
+        public Train(): void
+            ()
+    
+    //public class Perceptron
+    //    type Span = Decoder.Span
+    //    Data: array[array[Token] * Span]
+    //    Weights: array[double] = array(1 << 27)
+    //    Dec: Decoder = Decoder(Weights)
+    //    mutable Step: int = 1
+        
+    //    public this(data: array[array[Token]])
+    //        Console.WriteLine("creating gold...")
+    //        Data = array(data.Length)
+    //        foreach (i in Range(0, data.Length)) Data[i] = (data[i], Dec.Force(data[i]))
+                
+    //    public Train(): void
+    //        Console.WriteLine("training...")
+    //        def preds = List(Data.Length)
+    //        foreach (i in Range(0, Data.Length))
+    //            when (i != 2) continue
+    //            PrintLog(i + 1)
+    //            def y = Data[i][1]
+    //            def z = Dec.Decode(Data[i][0])
+
+    //            def dat = Data[i][0]
+    //            def toks = Range(0, dat.Length).MapToArray(i => Token(dat[i].No, dat[i].Form, dat[i].Tag, -1, dat[i].Rel))
+    //            toks[z.Head].Head = -1
+    //            foreach (s in z.Topdown)
+    //                when (s.LChild != null && s.LChild.Head != s.Head) toks[s.LChild.Head].Head = s.Head
+    //                when (s.RChild != null && s.RChild.Head != s.Head) toks[s.RChild.Head].Head = s.Head
+    //            (Data[i][0], toks) |> preds.Add
+
+    //            //mutable score = 0.0
+    //            //foreach (s in z.Topdown) score += s.Feats.Sum(f => Weights[f])
+
+    //            foreach (s in y.Topdown) Update(s.Feats, 1.0)
+    //            foreach (s in z.Topdown) Update(s.Feats, -1.0)
+
+    //            Step++
+    //        Eval.PrintAverageScore(preds)
+            
+    //    PrintLog(i: int): void
+    //        def interval = Data.Length / 100
+    //        when (i % interval == 0)
+    //            Console.Write($"$(i / interval)")
+    //        when (i == Data.Length) Console.WriteLine("")
+            
+    //    Update(feats: array[int], value: double): void
+    //        foreach (f in feats)
+    //            checked
+    //                Weights[f] += value
+    //                //AvgWeightVec[f] += Step * value

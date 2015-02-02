@@ -1,0 +1,36 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.Linq
+using Nemerle.Imperative
+
+namespace Haplon.NLP.Transition.DepParsing
+    
+    public module Eval
+        ExclSet: HashSet[string] = array["''", ",", ".", ":", "``"] |> HashSet
+            
+        public AttachScore(x: array[Token], y: array[Token]): double * double
+            assert(x.Length == y.Length)
+            mutable (uas, las, count) = (0, 0, 0)
+            for (mutable i = 0; i < x.Length; i++)
+                assert(x[i].Form == y[i].Form && x[i].Tag == y[i].Tag)
+                when (IO.StrTab.ContainsId(x[i].Form) && IO.StrTab[x[i].Form] |> ExclSet.Contains) continue
+                when (x[i].Head == y[i].Head) uas++
+                when (x[i].Head == y[i].Head && x[i].Rel == y[i].Rel) las++
+                count++
+            ((uas: double) / count, (las: double) / count)
+
+        public ExMatchScore(scores: IList[double]): double
+            scores.Count(s => s == 1.0) / (scores.Count: double)
+            
+        public PrintAverageScore(data: IList[array[Token] * array[Token]]): void
+            mutable (uas, las) = (List(), List())
+            foreach (d in data)
+                def scores = AttachScore(d)
+                uas.Add(scores[0])
+                las.Add(scores[1])
+                
+            Console.WriteLine("UAS:\t{0:0.00000}", uas.Average())
+            Console.WriteLine("UEM:\t{0:0.00000}", uas |> ExMatchScore)
+            Console.WriteLine("LAS:\t{0:0.00000}", las.Average())
+            Console.WriteLine("LEM:\t{0:0.00000}", las |> ExMatchScore)

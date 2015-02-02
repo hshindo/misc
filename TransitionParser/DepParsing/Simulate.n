@@ -1,0 +1,35 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.Linq
+
+namespace Haplon.NLP.Transition.DepParsing
+    
+    public module Simulate
+        type State = NonDir.State
+        
+        public Do(): void
+            Train()
+            
+        public Train(): void
+            //def data = IO.ReadCoNLL09(IO.TrainPath, IO.StrTab.Add)
+            //def testset = IO.ReadCoNLL09(IO.TestPath, IO.StrTab.ToId)
+            def data = IO.ReadMST(IO.TrainMSTPath, IO.StrTab.Add)
+            def testset = IO.ReadMST(IO.TestMSTPath, IO.StrTab.ToId)
+            Console.WriteLine($"# sent:\t$(data.Count)")
+            
+            def states = data.ConvertAll(x => (State(x), State.CreateTarget(x))).FindAll(x => x[1] != null)
+            Console.WriteLine($"# valid sent:\t$(states.Count)")
+            
+            def m = Perceptron(states, 8)
+            for (mutable iter = 1; iter <= 50; iter++)
+                Console.WriteLine($"# iter: $(iter)")
+                m.Train()
+                
+                Console.WriteLine("test...")
+                def decoder = BreadthFirst(m.Average(), 8)
+                def l = List()
+                foreach (tokens in testset)
+                    def node = decoder.Search(State(tokens), st => st.ValidActs())
+                    when (node != null) (tokens, node.St.ToTokens()) |> l.Add
+                Eval.PrintAverageScore(l)

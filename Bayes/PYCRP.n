@@ -1,0 +1,118 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using Haplon.Collections
+using Haplon.Numerics
+using MathNet.Numerics
+using MathNet.Numerics.Distributions
+using Nemerle.Imperative
+
+namespace Haplon.Numerics.Statistics
+
+    public class PYCRP
+        public Discount: double  { get; private set; }
+        public Strength: double { get; private set; }
+        public TableCount: int { get; private set; }
+        public CustomerCount: int { get; private set; }
+        public DiscountPrior = Beta(1.0, 1.0)
+        public StrengthPrior = Gamma(1.0, 1.0)
+        public Dimension: int { get Clusters.Count }
+        public BackoffWeight: double { get (Strength + Discount * TableCount) / (Strength + CustomerCount) }
+        internal Item[id: int]: Cluster { get Clusters[id] }
+        
+        BaseDistr: int -> double
+        Clusters: Dictionary[int, Cluster] = Dictionary()
+        
+        public this() { this(_ => 1.0 / (Dimension + 1)) }
+        public this(baseDistr: int -> double)
+            BaseDistr = baseDistr
+            Discount = DiscountPrior.Sample() + 1e-100
+            Strength = StrengthPrior.Sample() + 1e-100
+        
+        public Add(id: int): void
+            mutable cls
+            when (!Clusters.TryGetValue(id, out cls))
+                cls = Cluster(id)
+                Clusters.Add(id, cls)
+            def t = cls.TableCount
+            def newprob = (Strength + Discount * TableCount) * BaseDistr(id)
+            cls.Add(Discount, newprob)
+            TableCount += (cls.TableCount - t)
+            CustomerCount++
+              
+        public LogLikelihood(): double
+            if (Dimension == 0) 0.0
+            else Clusters.Values.Sum(it => it.TableCount * Math.Log(BaseDistr(it.Id))) + LogPriorLikelihood()
+            
+        public Prob(id: int): double
+            def p = FirstTerm(id) + SecondTerm(id)
+            CheckProb(p)
+            p
+            
+        public FirstTerm(id: int): double
+            mutable cls
+            if (Clusters.TryGetValue(id, out cls)) (cls.CustomerCount - Discount * cls.TableCount) / (Strength + CustomerCount)
+            else 0.0
+            
+        public SecondTerm(id: int): double { (Strength + Discount * TableCount) * BaseDistr(id) / (Strength + CustomerCount) }
+            
+        public Remove(id: int): void
+            def cls = Clusters[id]
+            def t = cls.TableCount
+            cls.Remove()
+            TableCount += (cls.TableCount - t)
+            when (cls.CustomerCount == 0) _ = Clusters.Remove(id)
+            CustomerCount--
+            
+        public Update(): void
+            when (CustomerCount == 0) return
+            def funDisc(x)
+                Discount = x
+                LogPriorLikelihood() + DiscountPrior.DensityLn(x)
+            def funStrg(x)
+                Strength = x
+                LogPriorLikelihood() + StrengthPrior.DensityLn(x)
+            def discSampler = SliceSampler(funDisc, Discount, 0.0, 1.0)
+            def strgSampler = SliceSampler(funStrg, Strength, 0.0, Double.MaxValue)
+            foreach (_ in [1 .. 10])
+                Discount = discSampler.Next()
+                Strength = strgSampler.Next()
+            assert(Discount >= 0.0 && Discount <= 1.0)
+            
+        CheckProb(p: double): void { assert(p >= 0.0 && p < 1.00001) }
+        
+        /// <summary> Computes the log of generalized factorial function. 
+	    /// Generalized factorial: [a, b]_c = a(a+b)...(a+(c-1)b) = b^c * Γ(a/b+c) / Γ(a/b).
+	    /// </summary>
+        LogFactorial(a: double, b: double, c: int): double
+            if (c <= 0.0) 0.0
+            else c * Math.Log(b) + SpecialFunctions.GammaLn(a / b + c) - SpecialFunctions.GammaLn(a / b)
+        
+        LogPriorLikelihood(): double
+            def newterm = LogFactorial(Strength, Discount, TableCount) - LogFactorial(Strength, 1.0, CustomerCount)
+            def occterm(c) { LogFactorial(1.0 - Discount, 1.0, c - 1) }
+            if (Dimension == 0) newterm
+            else Clusters.Values.FlatMap(r => r.Customers).Sum(occterm) + newterm
+            
+        internal class Cluster
+            public Id: int
+            public CustomerCount: int { get; private set; }
+            tables: List[double] = List()
+            public TableCount: int { get tables.Count }
+            public Customers: Seq[int] { get foreach (c in tables) yield c:> int }
+        
+            public this(id: int) { Id = id }
+            
+            internal Add(discount: double, newprob: double): void
+                def probs = tables.ConvertAll(it => it - discount)
+                probs.Add(newprob)
+                def i = probs.ToArray().Sample()
+                if (i < TableCount) tables[i] += 1.0
+                else tables.Add(1.0)
+                CustomerCount++
+
+            internal Remove(): void
+                def i = tables.ToArray().Sample()
+                tables[i] -= 1.0
+                when (tables[i] == 0.0) tables.RemoveAt(i)
+                CustomerCount--

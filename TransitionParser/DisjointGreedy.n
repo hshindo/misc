@@ -1,0 +1,84 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.Linq
+using Nemerle.Imperative
+
+namespace Haplon.NLP.Transition
+
+    /*public class DisjointGreedy[S, A] where S: AbsState[S, A]
+        type Node = StateNode[S, A]
+        WeightVec: array[double]
+        BeamSize: int
+        NextActs: S -> array[A] { get; set }
+        
+        public this(weightVec: array[double], beamSize: int)
+            WeightVec = weightVec
+            BeamSize = beamSize
+            
+        public Search(state: S, nextActs: S -> array[A]): Node
+            NextActs = nextActs
+            def finals = List()
+            def init = GreedySearch(Node(0.0, state))
+            finals.Add(init)
+            mutable kbest = array[init.Forward.ToArray()] |> List
+            mutable step = 0
+            while (kbest.Count > 0 && !kbest[0][0].St.IsFinal)
+                kbest = Expand(kbest, step, finals)
+                step++
+            
+            // find max
+            mutable max = finals[0]
+            foreach (node in finals)
+                when (node.Score > max.Score) max = node
+            max
+            
+        Expand(source: List[array[Node]], step: int, finals: List[Node]): List[array[Node]]
+            def temp = List()
+            foreach (g in source)
+                mutable (max_g, max_act, max_score) = (null, default(A), double.MinValue)
+                foreach (act in NextActs(g[step].St))
+                    when (Equals(act, g[step + 1].LastAct)) // greedy
+                        (g, act, g[step + 1].Score) |> temp.Add
+                        continue
+                    when (g[step].St.IsReachable(act, g[g.Length - 1].St)) continue // non-disjoint
+                    def score = g[step].St.GetFeatIds(act).Sum(id => WeightVec[id]) + g[step].Score
+                    when (score > max_score) (max_g, max_act, max_score) = (g, act, score)
+                when (max_g != null) (max_g, max_act, max_score) |> temp.Add
+            temp.Sort((x, y) => y[2].CompareTo(x[2]))
+            
+            def dest = List()
+            foreach ((g, act, score) in temp)
+                when (dest.Count >= BeamSize) break
+                if (Equals(act, g[step + 1].LastAct)) dest.Add(g)
+                else
+                    def next = g[step].Next(score, act)
+                    def final = GreedySearch(next)
+                    finals.Add(final)
+                    (final.Forward.ToArray()) |> dest.Add
+            dest
+                    
+        GreedySearch(source: Node): Node
+            mutable node = source
+            while (!node.St.IsFinal)
+                mutable (max_node, max_act, max_score) = (null, default(A), double.MinValue)
+                foreach (act in NextActs(node.St))
+                    def score = node.St.GetFeatIds(act).Sum(id => WeightVec[id]) + node.Score
+                    when (score > max_score) (max_node, max_act, max_score) = (node, act, score)
+                node = max_node.Next(max_score, max_act)
+            node
+            
+        // test
+        Expand(source: List[Node]): List[Node]
+            def temp = List()
+            foreach (node in source)
+                foreach (n_act in NextActs(node.St))
+                    def n_score = node.St.GetFeatIds(n_act).Sum(id => WeightVec[id]) + node.Score
+                    (node, n_act, n_score) |> temp.Add
+            temp.Sort((x, y) => y[2].CompareTo(x[2]))
+            
+            def dest = List(BeamSize)
+            foreach ((node, act, score) in temp)
+                node.Next(score, act) |> dest.Add
+                when (dest.Count >= BeamSize) break
+            dest*/

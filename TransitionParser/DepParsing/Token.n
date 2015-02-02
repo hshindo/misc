@@ -1,0 +1,20 @@
+﻿#pragma indent
+
+namespace Haplon.NLP.Transition.DepParsing
+    
+    public class Token
+        public Form: int = -1
+        public Lemma: int = -1
+        public Tag: int = -1
+        public Head: int = -1
+        public Rel: int = -1
+        public static None: Token = Token()
+
+        public this() { }
+        
+        public this(form: int, lemma: int, tag: int, head: int, rel: int)
+            (Form, Lemma, Tag, Head, Rel) = (form, lemma, tag, head, rel)
+        
+        public Copy(head: int, rel: int): Token
+            Token(Form, Lemma, Tag, head, rel)
+            

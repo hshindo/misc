@@ -1,0 +1,73 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.IO
+using System.Linq
+using Nemerle.Imperative
+using Haplon.Collections
+
+namespace Haplon.NLP.Transition.DepParsing
+    
+    public module IO
+        public TrainPath = @"CoNLL2009-ST-English-train.txt"
+        public TestPath = @"CoNLL2009-ST-evaluation-English.txt"
+        public TrainMSTPath = @"wsj_02-21.auto.mst"
+        public TestMSTPath = @"wsj_23.auto.mst"
+        public StrTab: IdTable[string] = IdTable()
+        
+        public ReadCoNLL09(path: string, strToId: string -> int): List[array[Token]]
+            // 0:ID 1:FORM 2:LEMMA 3:PLEMMA 4:POS 5:PPOS 6:FEAT 7:PFEAT 8:HEAD 9:PHEAD 10:DEPREL 11:PDEPREL 12:FILLPRED 13:PRED 14:APREDn
+            Console.WriteLine($"Reading $(Path.GetFileName(path)) ...")
+            def (data, buf) = (List(), List())
+            foreach (line in File.ReadLines(path))
+                if (line.Length == 0)
+                    buf.ToArray() |> data.Add
+                    buf.Clear()
+                    //when (data.Count > 10000) return data
+                else
+                    def items = line.Split('\t')
+                    def form = items[1] |> strToId
+                    def lemma = items[2] |> strToId
+                    def tag = items[5] |> strToId
+                    def head = int.Parse(items[8]) - 1
+                    def rel = 
+                        //if (head >= 0) items[10] |> strToId
+                        //else -1 // root
+                        -1
+                    Token(form, lemma, tag, head, rel) |> buf.Add
+            data
+            
+        public ReadMST(path: string, strToId: string -> int): List[array[Token]]
+            Console.WriteLine($"Reading $(Path.GetFileName(path)) ...")
+            def (data, buf) = (List(), List())
+            foreach (line in File.ReadLines(path))
+                when (line.Length == 0) continue
+                def items = line.Split(array['\t'], StringSplitOptions.RemoveEmptyEntries)
+                buf.Add(items)
+                when (buf.Count < 3) continue
+                
+                assert(buf[0].Length == buf[1].Length && buf[1].Length == buf[2].Length)
+                def tokens = array(buf[0].Length)
+                for (mutable i = 0; i < buf[0].Length; i++)
+                    def form = buf[0][i] |> strToId
+                    def tag = buf[1][i] |> strToId
+                    def head = int.Parse(buf[2][i]) - 1
+                    tokens[i] = Token(form, -1, tag, head, -1)
+                tokens |> data.Add
+                buf.Clear()
+                when (data.Count >= 10000) break
+            data
+            
+        public ReadWeightVec(path: string, count: int): array[double]
+            def vec = array(count)
+            foreach (line in File.ReadAllLines(path))
+                def items = line.Split('\t')
+                vec[int.Parse(items[0])] = (items[1] |> double.Parse)
+            vec
+            
+        public WriteWeightVec(path: string, weightVec: array[double]): void
+            def contents = List()
+            for (mutable i = 0; i < weightVec.Length; i++)
+                when (weightVec[i] != 0.0) $"$(i)\t$(weightVec[i])" |> contents.Add
+            File.WriteAllLines($"$(path).w", contents)
+            

@@ -1,0 +1,124 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.Linq
+using Nemerle.Imperative
+
+namespace Haplon.NLP.Transition. DepParsing
+    
+    public module Feature
+        
+        public Generate(left: array[Node], right: array[Node]): IEnumerable[int]
+            // structural
+            
+            // unigram
+            def unigrams = array[left[0], left[1], left[2], right[0], right[1], right[2]]
+            for (mutable i = 0; i < unigrams.Length; i++)
+                def n = unigrams[i]
+                when (n == null) continue
+                yield ToHashCode("f".GetHashCode(), i, n.V.Form)
+                yield ToHashCode("t".GetHashCode(), i, n.V.Tag)
+                yield ToHashCode("ft".GetHashCode(), i, n.V.Form, n.V.Tag)
+                    
+                yield ToHashCode("f:lct".GetHashCode(), i, n.V.Form, n.LC.Tag)
+                yield ToHashCode("t:lct".GetHashCode(), i, n.V.Tag, n.LC.Tag)
+                yield ToHashCode("ft:lct".GetHashCode(), i, n.V.Form, n.V.Tag, n.LC.Tag)
+                    
+                yield ToHashCode("f:rct".GetHashCode(), i, n.V.Form, n.RC.Tag)
+                yield ToHashCode("t:rct".GetHashCode(), i, n.V.Tag, n.RC.Tag)
+                yield ToHashCode("ft:rct".GetHashCode(), i, n.V.Form, n.V.Tag, n.RC.Tag)
+
+                yield ToHashCode("f:lct:rct".GetHashCode(), i, n.V.Form, n.LC.Tag, n.RC.Tag)
+                yield ToHashCode("t:lct:rct".GetHashCode(), i, n.V.Tag, n.LC.Tag, n.RC.Tag)
+                yield ToHashCode("ft:lct:rct".GetHashCode(), i, n.V.Form, n.V.Tag, n.LC.Tag, n.RC.Tag)
+            
+            def bigrams = array[(left[0], left[1]), (left[0], left[2]), (left[0], right[0]), (left[0], right[1]), (right[0], left[0]), (right[0], left[1]), (right[0], right[1]), (right[0], right[2])]
+            for (mutable i = 0; i < bigrams.Length; i++)
+                def n1 = if (bigrams[i][0] == null) Node.None else bigrams[i][0]
+                def n2 = if (bigrams[i][1] == null) Node.None else bigrams[i][1]
+                yield ToHashCode("f-f".GetHashCode(), i, n1.V.Form, n2.V.Form)
+                yield ToHashCode("t-t".GetHashCode(), i, n1.V.Tag, n2.V.Tag)
+                yield ToHashCode("f-t".GetHashCode(), i, n1.V.Form, n2.V.Tag)
+                yield ToHashCode("t-f".GetHashCode(), i, n1.V.Tag, n2.V.Form)
+                yield ToHashCode("ft-f".GetHashCode(), i, n1.V.Form, n1.V.Tag, n2.V.Form)
+                yield ToHashCode("ft-t".GetHashCode(), i, n1.V.Form, n1.V.Tag, n2.V.Tag)
+                
+                // unnecessary?
+                //yield array["f-ft".GetHashCode(), i, n1.V.Form, n2.V.Form, n2.V.Tag]
+                //yield array["t-ft".GetHashCode(), i, n1.V.Tag, n2.V.Form, n2.V.Tag]
+                //yield array["ft-ft".GetHashCode(), i, n1.V.Form, n1.V.Tag, n2.V.Form, n2.V.Tag]
+                
+                yield ToHashCode("f:lct-t".GetHashCode(), i, n1.V.Form, n1.LC.Tag, n2.V.Tag)
+                yield ToHashCode("t:lct-t".GetHashCode(), i, n1.V.Tag, n1.LC.Tag, n2.V.Tag)
+                yield ToHashCode("f:rct-t".GetHashCode(), i, n1.V.Form, n1.RC.Tag, n2.V.Tag)
+                yield ToHashCode("t:rct-t".GetHashCode(), i, n1.V.Tag, n1.RC.Tag, n2.V.Tag)
+                yield ToHashCode("f-t:lct".GetHashCode(), i, n1.V.Form, n2.V.Tag, n2.LC.Tag)
+                yield ToHashCode("t-t:lct".GetHashCode(), i, n1.V.Tag, n2.V.Tag, n2.LC.Tag)
+                yield ToHashCode("f-t:rct".GetHashCode(), i, n1.V.Form, n2.V.Tag, n2.RC.Tag)
+                yield ToHashCode("t-t:rct".GetHashCode(), i, n1.V.Tag, n2.V.Tag, n2.RC.Tag)
+                
+                // unnecessary?
+                //yield array["t:lct-t:rct".GetHashCode(), idi, idj, pi.Tag, pil.Tag, pj.Tag, pjr.Tag]
+                //yield array["t:rct-t:lct".GetHashCode(), idi, idj, pi.Tag, pir.Tag, pj.Tag, pjl.Tag]
+                //yield array["t:lct-t:lct".GetHashCode(), idi, idj, pi.Tag, pil.Tag, pj.Tag, pjl.Tag]
+                //yield array["t:rct-t:rct".GetHashCode(), idi, idj, pi.Tag, pir.Tag, pj.Tag, pjr.Tag]
+                //yield array["t:lct:rct:t".GetHashCode(), idi, idj, pi.Tag, pil.Tag, pir.Tag, pj.Tag]
+                //yield array["t-t:lct:rct".GetHashCode(), idi, idj, pi.Tag, pj.Tag, pjl.Tag, pjr.Tag]
+                
+            def trigrams = array[(left[0], left[1], left[2]), (left[0], left[1], right[0]), (right[0], right[1], right[2]), (right[0], right[1], left[0])]
+            for (mutable i = 0; i < trigrams.Length; i++)
+                def n1 = if (trigrams[i][0] == null) Node.None else trigrams[i][0]
+                def n2 = if (trigrams[i][1] == null) Node.None else trigrams[i][1]
+                def n3 = if (trigrams[i][2] == null) Node.None else trigrams[i][2]
+                yield ToHashCode("f-t-t".GetHashCode(), i, n1.V.Form, n2.V.Tag, n3.V.Tag)
+                yield ToHashCode("t-t-t".GetHashCode(), i, n1.V.Tag, n2.V.Tag, n3.V.Tag)
+
+                yield ToHashCode("f:lct-t-t".GetHashCode(), i, n1.V.Form, n1.LC.Tag, n2.V.Tag, n3.V.Tag)
+                yield ToHashCode("t:lct-t-t".GetHashCode(), i, n1.V.Tag, n1.LC.Tag, n2.V.Tag, n3.V.Tag)
+
+                yield ToHashCode("f:rct_t_t".GetHashCode(),i, n1.V.Form, n1.RC.Tag, n2.V.Tag, n3.V.Tag)
+                yield ToHashCode("t:rct-t-t".GetHashCode(), i, n1.V.Tag, n1.RC.Tag, n2.V.Tag, n3.V.Tag)
+                    
+        public ToHashCode(params data: array[int]): int // Jenkins "one-at-a-time"
+            mutable hash = 1
+            unchecked
+                foreach (x in data)
+                    hash += x
+                    hash += (hash << 10)
+                    hash ^= (hash >> 6)
+                hash += (hash << 3)
+                hash ^= (hash >> 11)
+                hash += (hash << 15)
+                hash
+         
+    public class Node
+        public Value: int
+        public Head: int
+        public LMod: int
+        public RMod: int
+        public Tokens: array[Token]
+        public static None: Node = Node(-1, -1, -1, -1, null)
+            
+        public V: Token { get if (Value < 0) Token.None else Tokens[Value] }
+        public H: Token { get if (Head < 0) Token.None else Tokens[Head] }
+        public LC: Token { get if (LMod < 0) Token.None else Tokens[LMod] }
+        public RC: Token { get if (RMod < 0) Token.None else Tokens[RMod] }
+            
+        public this(value: int, head: int, lmod: int, rmod: int, tokens: array[Token])
+            (Value, Head, LMod, RMod, Tokens) = (value, head, lmod, rmod, tokens)
+            
+        public static Attach(head: Node, dep: Node): Node * Node
+            assert(head.Value >= 0 && dep.Value >= 0 && dep.Head < 0)
+            def h = 
+                if (dep.Value < head.Value)
+                    if (head.LMod < 0 || dep.Value < head.LMod) Node(head.Value, head.Head, dep.Value, head.RMod, head.Tokens)
+                    else throw Exception()
+                else
+                    if (head.RMod < 0 || dep.Value > head.RMod) Node(head.Value, head.Head, head.LMod, dep.Value, head.Tokens)
+                    else throw Exception()
+            def d = Node(dep.Value, head.Value, dep.LMod, dep.RMod, dep.Tokens)
+            (h, d)
+                
+        public ToToken(): Token
+            def t = Tokens[Value]
+            Token(t.Form, t.Lemma, t.Tag, Head, -1)

@@ -1,0 +1,110 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.Linq
+using System.Linq.Enumerable
+using Nemerle.Imperative
+using Jukai.Parsing
+
+namespace Jukai
+    
+    public module Feature
+    
+        public ToFeats(pred: Span, arg: Span, toks: array[Token], count: int): array[int]
+            ToBaseFeats(toks, pred, arg).MapToArray(f => Math.Abs(f) % count)
+    
+        public ToFeats2(pred: Span, arg: Span, toks: array[Token], count: int): array[int]
+            def baseFeats = ToBaseFeats(toks, pred, arg).ToList()
+            def dist = match (Math.Abs(pred.Pos - arg.Pos))
+                | d when d >= 10 => 10
+                | d when d < 5 => d
+                | _ => 5
+            def feats = array(baseFeats.Count * 2)
+            for (mutable i = 0; i < feats.Length; i += 2)
+                feats[i] = Math.Abs(baseFeats[i]) % count
+                feats[i + 1] = Math.Abs(ToHashCode(baseFeats[i], dist)) % count
+            feats
+    
+        ToBaseFeats(toks: array[Token], pred: Span, arg: Span): IEnumerable[int]
+            def (xf, xc, yf, yc) = (toks[pred.Pos].Form, toks[pred.Pos].Cat, toks[arg.Pos].Form, toks[arg.Pos].Cat)
+            def xcp = if (pred.Pos + 1 < toks.Length) toks[pred.Pos + 1].Cat else -2
+            def xcm = if (pred.Pos - 1 >= 0) toks[pred.Pos - 1].Cat else -1
+            def ycp = if (arg.Pos + 1 < toks.Length) toks[arg.Pos + 1].Cat else -2
+            def ycm = if (arg.Pos - 1 >= 0) toks[arg.Pos - 1].Cat else -1
+            
+            // unigram
+            //yield array["xf-xc".GetHashCode(), xf, xc] |> ToHashCode
+            //yield array["xf".GetHashCode(), xf] |> ToHashCode
+            //yield array["xc".GetHashCode(), xc] |> ToHashCode
+            //yield array["yf-yc".GetHashCode(), yf, yc] |> ToHashCode
+            //yield array["yf".GetHashCode(), yf] |> ToHashCode
+            //yield array["yc".GetHashCode(), yc] |> ToHashCode
+            
+            // bigram
+            //yield array["xf-xc-yf-yc".GetHashCode(), xf, xc, yf, yc] |> ToHashCode
+            //yield array["xc-yf-yc".GetHashCode(), xc, yf, yc] |> ToHashCode
+            //yield array["xf-yf-yc".GetHashCode(), xf, yf, yc] |> ToHashCode
+            //yield array["xf-xc-yc".GetHashCode(), xf, xc, yc] |> ToHashCode
+            //yield array["xf-xc-yf".GetHashCode(), xf, xc, yf] |> ToHashCode
+            yield array["xf-yc".GetHashCode(), xf, yc] |> ToHashCode
+            yield array["xc-yf".GetHashCode(), xc, yf] |> ToHashCode
+            yield array["xf-yf".GetHashCode(), xf, yf] |> ToHashCode
+            yield array["xc-yc".GetHashCode(), xc, yc] |> ToHashCode
+            
+            // 5-gram
+            //def fives = toks[pred.Pos].Fives
+            //for (mutable i = 0; i < fives.Length; i++)
+            //    yield array["five-yf".GetHashCode(), fives[i], yf] |> ToHashCode
+            //    yield array["five-yc".GetHashCode(), fives[i], yc] |> ToHashCode
+            
+            // between
+            //def (i, j) = if (pred.Pos < arg.Pos) (pred.Pos, arg.Pos) else (arg.Pos, pred.Pos)
+            //for (mutable p = i + 1; p < j; p++)
+            //    def dist =
+            //        if (p - i < 5) p - i
+            //        else if (p - i < 10) 5
+            //        else 10
+            //    yield array["xc-bc-yc".GetHashCode(), xc, toks[p].Cat, yc] |> ToHashCode
+            //    yield array["xc-bc-yc".GetHashCode(), dist, xc, toks[p].Cat, yc] |> ToHashCode
+            
+            // surrounding
+            //yield array["xc-xcp-ycm-yc".GetHashCode(), xc, xcp, ycm, yc] |> ToHashCode
+            //yield array["xcm-xc-ycm-yc".GetHashCode(), xcm, xc, ycm, yc] |> ToHashCode
+            //yield array["xc-xcp-yc-ycp".GetHashCode(), xc, xcp, yc, ycp] |> ToHashCode
+            //yield array["xcm-xc-yc-ycp".GetHashCode(), xcm, xc, yc, ycp] |> ToHashCode
+            
+            // surrounding backoff
+            //yield array["xc-xcm-yc".GetHashCode(), xc, xcm, yc] |> ToHashCode
+            //yield array["xc-xcm-ycm".GetHashCode(), xc, xcm, ycm] |> ToHashCode
+            //yield array["xc-xcm-ycp".GetHashCode(), xc, xcm, ycp] |> ToHashCode
+            //yield array["xc-ycm-yc".GetHashCode(), xc, ycm, yc] |> ToHashCode
+            //yield array["xc-xcp-yc".GetHashCode(), xc, xcp, yc] |> ToHashCode
+            //yield array["xc-xcp-ycp".GetHashCode(), xc, xcp, ycp] |> ToHashCode
+            //yield array["xc-xcp-ycm".GetHashCode(), xc, xcp, ycm] |> ToHashCode
+            //yield array["xc-yc-ycp".GetHashCode(), xc, yc, ycp] |> ToHashCode
+            //yield array["xcp-ycm-yc".GetHashCode(), xcp, ycm, yc] |> ToHashCode
+            //yield array["xcp-yc-ycp".GetHashCode(), xcp, yc, ycp] |> ToHashCode
+            //yield array["xcm-ycm-yc".GetHashCode(), xcm, ycm, yc] |> ToHashCode
+            //yield array["xcm-yc-ycp".GetHashCode(), xcm, yc, ycp] |> ToHashCode
+            
+        public ToHashCode(x: int, y: int): int
+            mutable hash = x
+            hash += y
+            hash += (hash << 10)
+            hash ^= (hash >> 6)
+            hash += (hash << 3)
+            hash ^= (hash >> 11)
+            hash += (hash << 15)
+            hash
+            
+        public ToHashCode(params data: array[int]): int // Jenkins "one-at-a-time"
+            mutable hash = 1
+            unchecked
+                foreach (x in data)
+                    hash += x
+                    hash += (hash << 10)
+                    hash ^= (hash >> 6)
+                hash += (hash << 3)
+                hash ^= (hash >> 11)
+                hash += (hash << 15)
+                hash

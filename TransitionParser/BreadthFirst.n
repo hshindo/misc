@@ -1,0 +1,112 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.Linq
+using Nemerle.Imperative
+
+namespace Haplon.NLP.Transition
+    
+    public class BreadthFirst[S, A] where S: AbsState[S, A]
+        type Node = StateNode[S, A]
+        WeightVec: array[double]
+        BeamSize: int
+        NextActs: S -> array[A] { get; set }
+        
+        public this(weightVec: array[double], beamSize: int)
+            WeightVec = weightVec
+            BeamSize = beamSize
+            
+        public Search(state: S, nextActs: S -> array[A]): Node
+            NextActs = nextActs
+            mutable kbest = array[Node(0.0, state)] |> List
+            while (kbest.Count > 0 && !kbest[0].St.IsFinal) kbest = ExpandUnique(kbest)
+            kbest[0]
+            
+        Expand(source: List[Node]): List[Node]
+            def temp = List()
+            foreach (node in source)
+                foreach (act in NextActs(node.St))
+                    def score = node.St.GetFeatIds(act).Sum(id => WeightVec[id]) + node.Score
+                    (score, node, act) |> temp.Add
+            temp.Sort((x, y) => y[0].CompareTo(x[0]))
+            
+            def dest = List(source.Count)
+            foreach ((score, node, act) in temp)
+                node.Next(score, act) |> dest.Add
+                when (dest.Count >= BeamSize) break
+            dest
+            
+        ExpandUnique(source: List[Node]): List[Node]
+            def dict = Dictionary(source[0].St)
+            foreach (node in source)
+                node.Childs = Dictionary()
+                foreach (act in NextActs(node.St))
+                    def b = (node.Prev != null) && node.Prev.Childs.ContainsKey(act) && !node.Prev.St.IsDependent(act, node.LastAct)
+                    def score =
+                        if (b) node.Prev.Childs[act]
+                        else node.St.GetFeatIds(act).Sum(id => WeightVec[id])
+                        
+                    node.Childs.Add(act, score)
+                    def next = node.Next(score + node.Score, act)
+                    
+                    mutable v: Node
+                    if (dict.TryGetValue(next.St, out v))
+                        when (next.Score > v.Score) dict[next.St] = next
+                    else dict.Add(next.St, next)
+                    
+            def temp = dict.Values.ToList()
+            temp.Sort((x, y) => y.Score.CompareTo(x.Score))
+            when (temp.Count > BeamSize) temp.RemoveRange(BeamSize, temp.Count - BeamSize)
+            temp
+            
+        ExpandDisjoint(source: List[Node]): List[Node]
+            def temp = List()
+            foreach (node in source)
+                mutable (score0, node0, act0) = (double.MinValue, null, default(A))
+                foreach (act in NextActs(node.St))
+                    def score = node.St.GetFeatIds(act).Sum(id => WeightVec[id]) + node.Score
+                    when (score > score0) (score0, node0, act0) = (score, node, act)
+                
+                foreach (act in node0.St.DisjointActs(act0))
+                    def score = node0.St.GetFeatIds(act).Sum(id => WeightVec[id]) + node0.Score
+                    (score, node0, act) |> temp.Add
+                    
+            temp.Sort((x, y) => y[0].CompareTo(x[0]))
+            def dest = List(BeamSize)
+            foreach ((score, node, act) in temp)
+                node.Next(score, act) |> dest.Add
+                when (dest.Count >= BeamSize) break
+            dest
+            
+        // experimental
+        ExpandMerge(source: List[Node]): List[Node]
+            def dict = Dictionary(source[0].St)
+            foreach (node in source)
+                foreach (act in NextActs(node.St))
+                    def score = node.St.GetFeatIds(act).Sum(id => WeightVec[id]) + node.Score
+                    def next = node.Next(score, act)
+                    mutable v: List[Node]
+                    if (dict.TryGetValue(next.St, out v)) v.Add(next)
+                    else dict.Add(next.St, List(array[next]))
+                    
+            def temp = List(dict.Count)
+            foreach (v in dict.Values) Node(v.Sum(n => n.Score), v[0].St, v[0].LastAct, v[0].Prev) |> temp.Add
+            temp.Sort((x, y) => y.Score.CompareTo(x.Score))
+            when (temp.Count > BeamSize) temp.RemoveRange(BeamSize, temp.Count - BeamSize)
+            temp
+            
+        ExpandUniqueSlow(source: List[Node]): List[Node]
+            def dict = Dictionary(source[0].St)
+            foreach (node in source)
+                foreach (act in NextActs(node.St))
+                    def score = node.St.GetFeatIds(act).Sum(id => WeightVec[id]) + node.Score
+                    def next = node.Next(score, act)
+                    mutable v: Node
+                    if (dict.TryGetValue(next.St, out v))
+                        when (next.Score > v.Score) dict[next.St] = next
+                    else dict.Add(next.St, next)
+                    
+            def temp = dict.Values.ToList()
+            temp.Sort((x, y) => y.Score.CompareTo(x.Score))
+            when (temp.Count > BeamSize) temp.RemoveRange(BeamSize, temp.Count - BeamSize)
+            temp

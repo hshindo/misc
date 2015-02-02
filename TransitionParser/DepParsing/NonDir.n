@@ -1,0 +1,149 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.Linq
+using Nemerle.Imperative
+
+namespace Haplon.NLP.Transition.DepParsing.NonDir
+    
+    [Record] public struct Action
+        public H: int
+        public D: int
+        
+        public Max: int { get Math.Max(H, D) }
+        public Min: int { get Math.Min(H, D) }
+        
+        public static Default: Action = Action(-1, -1)
+        
+    public class State: AbsState[State, Action]
+        Nodes: array[Node]
+        Roots: array[int]
+        Hash: int
+        BaseFeats: Dictionary[Action, array[int]] = Dictionary()
+        public Item[index: int]: Node { get Nodes[index]; private set Nodes[index] = value }
+        public Length: int { get Nodes.Length }
+        public static WindowSize: int = 3
+        
+        public this(tokens: array[Token])
+            def nodes = Enumerable.Range(0, tokens.Length).Select(i => Node(i, -1, -1, -1, tokens)).ToArray()
+            this(nodes, null, Action.Default)
+            
+        public this(nodes: array[Node], prev: State, lastAct: Action)
+            Nodes = nodes
+            Roots = Enumerable.Range(0, Nodes.Length).Where(i => Nodes[i].Head < 0).ToArray()
+            (Prev, LastAct) = (prev, lastAct)
+            Hash = Array.ConvertAll(Nodes, n => n.Head) |> Feature.ToHashCode
+            
+        public ToTokens(): array[Token] { Enumerable.Range(0, Nodes.Length).Select(i => Nodes[i].ToToken()).ToArray() }
+            
+        public static CreateTarget(tokens: array[Token]): State
+            def nodes = Enumerable.Range(0, tokens.Length).Select(i => Node(i, tokens[i].Head, -1, -1, tokens)).ToArray()
+            def target = State(nodes, null, Action.Default)
+            
+            mutable st = State(tokens)
+            while (!st.IsFinal)
+                def acts = st.ReachableActs(target)
+                when (acts.Length == 0) return null
+                st = st.Next(acts[0])
+            st
+            
+        public GetRootIndex(index: int): int { Array.BinarySearch(Roots, index) }
+            
+        // override
+        public override IsFinal: bool { get Roots.Length == 1 }
+        public LastAct: Action { get; private set }
+        public Prev: State { get; private set }
+            
+        public override GetFeatIds(act: Action): array[int]
+            def key = Action(act.Min, act.Max)
+            when (!BaseFeats.ContainsKey(key))
+                def (l0, r0) = (GetRootIndex(act.Min), GetRootIndex(act.Max))
+                def left = Array.ConvertAll(array[l0, l0 - 1, l0 - 2], i => if (i < 0) null else Nodes[Roots[i]])
+                def right = Array.ConvertAll(array[r0, r0 + 1, r0 + 2], i => if (i >= Roots.Length) null else Nodes[Roots[i]])
+                assert(left.Length == WindowSize && right.Length == WindowSize)
+                BaseFeats.Add(key, Feature.Generate(left, right).ToArray())
+                
+            def dir = if (act.H < act.D) -1 else 1
+            Array.ConvertAll(BaseFeats[key], f => {
+                mutable hash = Feature.ToHashCode(array[f, dir]);
+                when (hash < 0) hash = -hash;
+                hash % FeatCount;
+            })
+        
+        public override Next(act: Action): State
+            def nodes = array(Nodes.Length)
+            Array.Copy(Nodes, nodes, Nodes.Length)
+            (nodes[act.H], nodes[act.D]) = Node.Attach(nodes[act.H], nodes[act.D])
+            State(nodes, this, act)
+            
+        public override DisjointActs(act: Action): array[Action]
+            def acts = array[act] |> List
+            def r = Array.BinarySearch(Roots, act.D)
+            assert(r >= 0)
+            if (r > 0 && Roots[r - 1] == act.H)
+                when (r + 1 < Roots.Length)
+                    Action(Roots[r + 1], act.D) |> acts.Add
+                    Action(act.D, Roots[r + 1]) |> acts.Add
+            else if (r + 1 < Roots.Length && Roots[r + 1] == act.H)
+                when (r > 0)
+                    Action(Roots[r - 1], act.D) |> acts.Add
+                    Action(act.D, Roots[r - 1]) |> acts.Add
+            else throw Exception()
+            acts.ToArray()
+            
+        public override ValidActs(): array[Action]
+            def acts = List()
+            for (mutable i = 0; i < Roots.Length - 1; i++)
+                Action(Roots[i], Roots[i + 1]) |> acts.Add
+                Action(Roots[i + 1], Roots[i]) |> acts.Add
+            acts.ToArray()
+            
+        public override IsDependent(x: Action, y: Action): bool
+            assert(Equals(x, y) == false)
+            def (min, max) = if (x.D < y.D) (x, y) else (y, x)
+            def (rmin, rmax) = (GetRootIndex(min.Max), GetRootIndex(max.Min))
+            assert(rmin >= 0 && rmax >= 0)
+            (rmax - rmin) <= WindowSize
+            
+        public override ReachableActs(other: State): array[Action] // assumed reachability is already checked
+            def acts = List()
+            for (mutable i = 0; i < Roots.Length; i++)
+                when (Array.FindIndex(Roots, r => other[r].Head == Roots[i]) >= 0) continue
+                def h = other[Roots[i]].Head
+                when (h < 0) continue
+                when (i > 0 && h == Roots[i - 1]) Action(h, Roots[i]) |> acts.Add
+                when (i + 1 < Roots.Length && h == Roots[i + 1]) Action(h, Roots[i]) |> acts.Add
+            acts.ToArray()
+            
+        public override Equals(x: State, y: State): bool
+            assert(x.Length == y.Length)
+            when (x.Roots.Length != y.Roots.Length) return false
+            for (mutable i = 0; i < x.Length; i++)
+                when (x[i].Head != y[i].Head) return false
+            true
+            
+        public override GetHashCode(x: State): int { x.Hash }
+            
+        // experimental
+        public IsReachable(act: Action, other: State): bool // assumption: this is reachable to other
+            assert(Length == other.Length)
+            when (this[act.D].Head != other[act.D].Head) return false
+            foreach (r in Roots)
+                when (other[r].Head == act.D) return false
+            true
+            
+            // if assumption does not hold
+            //when (Roots.Length < other.Roots.Length) return false
+            //for (mutable i = 0; i < Length; i++)
+            //    when (this[i].Head < 0)
+            //        if (other[i].Head >= 0 && this[other[i].Head].Head >= 0) return false
+            //        else continue
+            //    when (this[i].Head != other[i].Head) return false
+            //true
+            
+        public IsDisjoint(other: State): bool
+            assert(Length == other.Length)
+            for (mutable i = 0; i < Length; i++)
+                when (this[i].Head < 0) continue
+                when (this[i].Head != other[i].Head) return true
+            false

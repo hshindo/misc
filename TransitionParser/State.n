@@ -1,0 +1,68 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.Linq
+using Nemerle.Imperative
+
+namespace Haplon.NLP.Transition
+    
+    public abstract class AbsState[S, A]: IEqualityComparer[S] where S: AbsState[S, A]
+        type State = AbsState[S, A]
+        public static FeatCount: int = 1 << 27
+
+        public abstract IsFinal: bool { get }
+        
+        public abstract Equals(x: S, y: S): bool
+        public abstract GetHashCode(x: S): int
+        public abstract GetFeatIds(act: A): array[int]
+        public abstract IsDependent(x: A, y: A): bool
+        public abstract Next(act: A): S
+        
+        public abstract DisjointActs(act: A): array[A]
+        public abstract ReachableActs(other: S): array[A]
+        public abstract ValidActs(): array[A]
+        
+    public class StateNode[S, A] where S: AbsState[S, A]
+        type Node = StateNode[S, A]
+        public Score: double
+        public St: S
+        public LastAct: A
+        public Prev: Node
+        public Childs: Dictionary[A, double] { get; set }
+        
+        public Forward: IEnumerable[Node]
+            get
+                when (Prev != null)
+                    foreach (n in Prev.Forward) yield n
+                yield this
+                
+        public Backward: IEnumerable[Node]
+            get
+                yield this
+                when (Prev != null)
+                    foreach (n in Prev.Backward) yield n
+        
+        public this() { }
+        public this(score: double, st: S) { this(score, st, default(A), null) }
+        public this(score: double, st: S, lastAct: A, prev: Node) { (Score, St, LastAct, Prev) = (score, st, lastAct, prev) }
+        
+        public Next(score: double, act: A): Node { Node(score, St.Next(act), act, this) }
+        
+    public struct Int2: IEqualityComparer[Int2]
+        public X: int
+        public Y: int
+
+        public this(x: int, y: int)
+            X = x
+            Y = y
+        
+        public override GetHashCode(): int { unchecked(((X + 25237) * 314159) ^ (Y + 314159)) }
+        
+        public GetHashCode(x: Int2): int { x.GetHashCode() }
+        
+        public Equals(x: Int2, y: Int2): bool { x.X == y.X && x.Y == y.Y }
+        
+        public override ToString(): string { $"$(X):$(Y)" }
+        
+        public static @== (x: Int2, y: Int2): bool { x.Equals(x, y) }
+        public static @!= (x: Int2, y: Int2): bool { !x.Equals(x, y) }

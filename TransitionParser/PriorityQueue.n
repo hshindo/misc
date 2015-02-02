@@ -1,0 +1,53 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using Nemerle.Imperative
+
+namespace Haplon.NLP.Transition
+    
+    // binary-heap implementation
+    public class PriorityQueue[T]
+        Data: array[T] { get; set }
+        Compare: Comparison[T]
+        public Count: int { get; private set }
+        Item[index: int]: T { get Data[index]; private set Data[index] = value }
+        
+        public this(compare: Comparison[T])
+            Data = array(16)
+            Compare = compare
+            
+        public Dequeue(): T
+            assert(Count > 0)
+            Count--
+            def top = this[1]
+            this[1] <-> this[Count]
+            
+            mutable k = 1
+            while (k * 2 <= Count)
+                mutable j = k * 2
+                when (j < Count && Compare(this[j], this[j + 1]) < 0) j++
+                when (Compare(this[k], this[j]) >= 0) break
+                this[k] <-> this[j]
+                k = j
+                
+            this[Count + 1] = default(T)
+            when (Count > 0 && (Count == Data.Length / 4)) Resize(Data.Length / 2)
+            top
+
+        public Enqueue(item: T): void
+            Count++
+            when (Count >= Data.Length) Resize(Data.Length * 2)
+            this[Count] = item
+            
+            mutable k = Count
+            while (k > 1 && Compare(this[k / 2], this[k]) < 0)
+                this[k] <-> this[k / 2]
+                k = k / 2
+                
+        public Peek(): T { this[1] }
+        
+        public Resize(size: int): void
+            when (size <= Count) return
+            def data = array(size)
+            Array.Copy(Data, data, Math.Min(Data.Length, data.Length))
+            Data = data

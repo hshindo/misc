@@ -1,0 +1,35 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using Haplon.Collections
+using MathNet.Numerics
+using Nemerle.Imperative
+
+namespace Haplon.Numerics
+    
+    module Random
+        public Generator: Random.MersenneTwister = Random.MersenneTwister()
+        
+        public Sample(this values: array[double]): int
+            def sum = values.Sum()
+            assert(sum > 0.0)
+            
+            def rnd = Generator.NextDouble()
+            mutable total = 0.0
+            def f (i: int)
+                total += (values[i] / sum)
+                total >= rnd
+            values.Indices().Find(f).Value
+        
+        public SampleLog(this values: array[double]): int
+            def max = values.Max()
+            assert(!Double.IsNegativeInfinity(max))
+            values.Map(it => Math.Exp(it - max)).ToArray().Sample()
+            
+	    /// <summary> Shuffles data using the Fisher-Yates algorithm </summary>
+        public Shuffle[T](this data: array[T]): void
+            for (mutable i = 0; i < data.Length; i++)
+                def k = Generator.Next(i, data.Length - 1)
+                def tmp = data[k]
+                data[k] = data[i]
+                data[i] = tmp

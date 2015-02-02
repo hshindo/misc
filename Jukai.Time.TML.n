@@ -1,0 +1,55 @@
+﻿#pragma indent
+using System
+using System.Linq
+using System.Xml.Linq
+
+namespace Jukai.Time
+    
+    public class Document
+        public Id: string
+        public DCT: Timex
+        public Text: array[string]
+        public Events: array[Event]
+        public Times: array[Timex]
+        
+        public this(path: string)
+            def xml = XElement.Load(path)
+            Id = xml.Elements("DOCID").First().Value
+            DCT = xml.Elements("DCT").First().Elements("TIMEX3").First() |> Timex
+            def textElem = xml.Elements("TEXT").First()
+            Text = textElem.Value.Trim().Split(array[' '], StringSplitOptions.RemoveEmptyEntries)
+            Events = textElem.Elements("EVENT").MapToArray(Event)
+            Times = textElem.Elements("TIMEX3").MapToArray(Timex)
+        
+    public class Timex
+        public Id: string
+        public Type: Types
+        public Value: string
+        public Words: array[string]
+        
+        public Text: string { get string.Join(" ", Words) }
+        
+        public this(elem: XElement)
+            Id = elem.Attributes("tid").First().Value
+            Type = match (elem.Attributes("type").First().Value)
+                | "TIME" => Types.Time
+                | "DATE" => Types.Date
+                | "DURATION" => Types.Duration
+                | "SET" => Types.Set
+                | _ => throw Exception()
+            Value = elem.Attributes("value").First().Value
+            Words = elem.Value.Split(array[' '], StringSplitOptions.RemoveEmptyEntries)
+            
+        public override ToString(): string
+            $"$(Id)\t$(Type)\t$(Value)\t$(Text)"
+        
+        public enum Types
+            | Time | Date | Duration | Set
+            
+    public class Event
+        public Id: string
+        public Class: string
+        
+        public this(elem: XElement)
+            Id = elem.Attributes("eid").First().Value
+            Class = elem.Attributes("class").First().Value

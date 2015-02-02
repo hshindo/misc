@@ -1,0 +1,240 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using HaploLab.Collections
+using HaploLab.Numerics
+
+namespace HaploLab.NLP
+    
+    public class LatentCFG
+        public static mutable SubcatCount: int = 2
+        public static mutable ResampleIter: int = 10000
+        NonTermCount: int
+        TermCount: int
+        ObsTrees: array[Tree[Symbol]]
+        TreeSet: IdCountDict[Tree[Symbol]] = IdCountDict(TreeComparer())
+        TreeDistrs: array[array[PYCRP]] // [nonterm id][subcat id] -> PYCRP
+        CFGProbs: array[double] // [CFG id] -> prob
+        
+        public TreeCount: int { get TreeSet.Count }
+            
+        public this(data: array[Tree[string]])
+            def trees = OntoNotes.Convert(data, 1)
+            NonTermCount = trees.FlatMap(t => t.TopdownNonLeaf).Map(n => n.Value).Max() + 1
+            TermCount = trees.FlatMap(t => t.Leaves).Map(n => n.Value).Max() + 1 - NonTermCount
+            ObsTrees = trees.Map(t => t.Map(n => Symbol(n.Value)))
+            
+            def baseDistr(id: int)
+                def t = TreeSet[id]
+                mutable p = CFGProbs[t.Value.CFGId]
+                repeat(t.Count) p /= SubcatCount
+                p
+            TreeDistrs = $[0 .. NonTermCount - 1].MapToArray(_ => $[0 .. SubcatCount - 1].MapToArray(_ => PYCRP(baseDistr)))
+            
+            def cfgSet = IdCountDict(TreeComparer())
+            def nodes = ObsTrees.FlatMap(t => t.BottomupNonLeaf)
+            nodes.Iter(n => n.Value.CFGId = cfgSet.Add(n.ToCFG(n => n.Value.Id)))
+            CFGProbs = cfgSet.ToFreqs()
+            
+            def initId(node: Tree[Symbol])
+                node.Value.SubId = Random.Gen.Next(2)
+                //n.Value.SubId = 0
+                def id = TreeSet.Add(node.ToCFG(n => n.Value.Copy()))
+                node.Value.TreeId = id
+                GetDistr(id).Add(id)
+            nodes.Iter(initId)
+            
+        public Gibbs(iterCount: int): void
+            def nodes = ObsTrees.FlatMap(t => t.Topdown).Filter(n => n.IsInter).ToArray()
+            foreach (iter in [0 .. iterCount - 1])
+                when (iter % 10 == 0) TreeDistrs.Flatten().Iter(d => d.Resample())
+                when (iter % ResampleIter == 0 && iter > 0) ResampleNode()
+                PrintLog(iter)
+                nodes.Shuffle()
+                nodes.Iter(SampleNode)
+            PrintLog(iterCount)
+            
+        public GibbsTree(iterCount: int): void
+            def nodes = GetTreeNodes()
+            foreach (iter in [0 .. iterCount - 1])
+                when (iter % 10 == 0) TreeDistrs.Flatten().Iter(d => d.Resample())
+                PrintLog(iter)
+                nodes.Shuffle()
+                nodes.Iter(n => SampleTrees(array[n]))
+            PrintLog(iterCount)
+            
+        GetDistr(id: int): PYCRP
+            def s = TreeSet.GetItem(id).Value
+            TreeDistrs[s.Id][s.SubId]
+            
+        GetTreeNodes(): array[Tree[Symbol]]
+            def l = List()
+            def f(node: Tree[Symbol])
+                when (!node.IsLeaf)
+                    l.Add(node)
+                    when (!node[0].IsLeaf) node.Childs.FlatMap(n => n.Childs).Iter(f)
+            ObsTrees.Iter(t => f(t[0]))
+            l.ToArray()
+            
+        Likelihood(): double { TreeDistrs.Flatten().Map(d => d.LogLikelihood()).Sum() }
+        
+        PrintLog(iter: int): void
+            when (iter == 0)
+                Console.WriteLine("# Tree: {0}", ObsTrees.Length)
+                Console.WriteLine("# Nonterminal: {0}", NonTermCount)
+                Console.WriteLine("# Terminal: {0}", TermCount)
+            when (iter % 10 == 0)
+                Console.WriteLine("{0}\t{1}\t{2}", iter, TreeCount, Likelihood())
+
+        SampleNode(node: Tree[Symbol]): void
+            def nodes = NodeSurround(node)
+            def (subId0, idset0) = (node.Value.SubId, nodes.Map(n => n.Value.TreeId))
+            idset0.Iter(id => GetDistr(id).Remove(id))
+            def getTreeId(subId)
+                if (subId == subId0) idset0
+                else
+                    node.Value.SubId = subId
+                    nodes.Map(n => n.ToCFG(n => n.Value.Copy())).Map(TreeSet.Add)
+            def idsets = $[0 .. SubcatCount - 1].MapToArray(getTreeId)
+            def probs = idsets.Map(idset => idset.Map(id => GetDistr(id).Prob(id)).Product())
+            def index = probs.Sample()
+            //def index = 0
+            
+            for (mutable i = 0; i < idsets.Length; i++)
+                def idset = idsets[i]
+                if (i == index)
+                    node.Value.SubId = i
+                    nodes.Zip(idset).Iter((n, id) => n.Value.TreeId = id)
+                    idset.Iter(id => GetDistr(id).Add(id))
+                else idset.Iter(TreeSet.Remove)
+                  
+        SampleNodes(nodes: array[Tree[Symbol]]): void
+            def allnodes = nodes.FlatMap(NodeSurround)
+            def (subId0, idset0) = (nodes[0].Value.SubId, allnodes.Map(n => n.Value.TreeId))
+            idset0.Iter(id => GetDistr(id).Remove(id))
+            def getTreeId(subId: int)
+                if (subId == subId0) idset0
+                else
+                    nodes.Iter(n => n.Value.SubId = subId)
+                    allnodes.Map(n => TreeSet.Add(n.ToCFG(n => n.Value.Copy())))
+                    
+            def idsets = $[0 .. SubcatCount - 1].MapToArray(getTreeId)
+            def probs = idsets.Map(idset => idset.Map(id => Math.Log(GetDistr(id).Prob(id))).Sum())
+            def index = probs.LogSample()
+            
+            for (mutable i = 0; i < idsets.Length; i++)
+                def idset = idsets[i]
+                if (i == index)
+                    nodes.Iter(n => n.Value.SubId = i)
+                    allnodes.Zip(idset).Iter((n, id) => n.Value.TreeId = id)
+                    idset.Iter(id => GetDistr(id).Add(id))
+                else idset.Iter(id => TreeSet.Remove(id))
+                
+        SampleTrees(nodes: array[Tree[Symbol]]): void
+            if (nodes[0][0].IsLeaf) SampleNodes(nodes)
+            else
+                def allnodes = nodes.FlatMap(TreeSurround)
+                def subIds0 = array[nodes[0]].Append(nodes[0].Childs.ToArray()).Map(n => n.Value.SubId)
+                def idset0 = allnodes.Map(n => n.Value.TreeId)
+                idset0.Iter(id => GetDistr(id).Remove(id))
+                
+                def count = nodes[0].Count + 1
+                def format = Format(Linq.Enumerable.Repeat(SubcatCount, count).ToArray(), _)
+                def setSubId(subIds)
+                    nodes.Iter(n => {
+                        n.Value.SubId = subIds[0];
+                        $[0 .. n.Count - 1].Iter(i => n[i].Value.SubId = subIds[i + 1]);
+                    })       
+                def getTreeId(subId: int)
+                    def subIds = format(subId)
+                    if (subIds.SeqEqual(subIds0)) idset0
+                    else
+                        setSubId(subIds)
+                        allnodes.Map(n => TreeSet.Add(n.ToCFG(n => n.Value.Copy())))
+                    
+                def idsets = $[0 .. Math.Pow(SubcatCount, count) - 1].MapToArray(getTreeId)
+                def probs = idsets.Map(idset => idset.Map(id => Math.Log(GetDistr(id).Prob(id))).Sum())
+                def index = probs.LogSample()
+                
+                for (mutable i = 0; i < idsets.Length; i++)
+                    def idset = idsets[i]
+                    if (i == index)
+                        setSubId(format(i))
+                        allnodes.Zip(idset).Iter((n, id) => n.Value.TreeId = id)
+                        idset.Iter(id => GetDistr(id).Add(id))
+                    else idset.Iter(id => TreeSet.Remove(id))
+                
+        NodeSurround(node: Tree[Symbol]): array[Tree[Symbol]] { array[node, node.Parent] }
+                    
+        TreeSurround(node: Tree[Symbol]): array[Tree[Symbol]]
+            if (node[0].IsLeaf) array[node, node.Parent]
+            else array[node, node.Parent].Append(node.Childs.ToArray())
+            
+        // subtree resampling
+        ResampleNode(): void
+            def nodes = ObsTrees.FlatMap(t => t.Topdown).Filter(n => n.IsInter).ToArray()
+            nodes.Shuffle()
+            def getKey(node: Tree[Symbol])
+                NodeSurround(node).Map(n => n.Value.TreeId)
+                //array[node.Value.TreeId]
+            def groups = nodes.GroupBy(getKey, ArrayComparer()).Map(g => g.ToArray()).ToArray()
+            groups.FlatMap(g => Exclude(g, NodeSurround)).Iter(SampleNodes)
+            
+        ResampleTree(): void
+            def nodes = GetTreeNodes()
+            nodes.Shuffle()
+            def getKey(node: Tree[Symbol])
+                TreeSurround(node).Map(n => n.Value.TreeId)
+                //array[node.Value.TreeId]
+            def groups = nodes.GroupBy(getKey, ArrayComparer()).Map(g => g.ToArray()).ToArray()
+            groups.FlatMap(g => Exclude(g, TreeSurround)).Iter(SampleTrees)
+            
+        Exclude(nodes: array[Tree[Symbol]], surround: Tree[Symbol] -> array[Tree[Symbol]]): array[array[Tree[Symbol]]]
+            //Console.Write(nodes.Length.ToString() + " ")
+            def hset = HashSet()
+            def blocks = List()
+            def l = List()
+            foreach (node in nodes)
+                if (surround(node).ForAll(hset.Add)) l.Add(node)
+                else blocks.Add(array[node])
+            when (l.Count > 0) blocks.Add(l.ToArray())
+            blocks.ToArray()
+            
+        public static Format(digits: array[int], count: int): array[int]
+            def a = array(digits.Length)
+            mutable c = count
+            for (mutable i = 0; i < digits.Length; i++)
+                a[i] = c % digits[i]
+                c = c / digits[i]
+            a
+            
+        Test(): void
+            def p = Diagnostics.Process()
+            p.StartInfo.FileName = "C:\\HelloWorld.exe -n 10"
+            p.StartInfo.CreateNoWindow = true
+            _ = p.Start()
+            def pats = p.StandardOutput.ReadToEnd().Split(array["\n"], StringSplitOptions. RemoveEmptyEntries)
+
+        class Symbol
+            public Id: int
+            public SubId: int { get; set; }
+            public CFGId: int { get; set; }
+            public TreeId: int { get; set; }
+            
+            public this(id: int, subId: int = -1, cfgId: int = -1, treeId = -1)
+                Id = id
+                SubId = subId
+                CFGId = cfgId
+                TreeId = treeId
+            
+            public Copy(): Symbol { Symbol(Id, SubId, CFGId, TreeId) }
+            
+            public override Equals(o: object): bool
+                match(o)
+                    | s is Symbol => Id == s.Id && SubId == s.SubId
+                    | _ => false
+                    
+            public override GetHashCode(): int { unchecked(397 * (Id + 397)) ^ (SubId + 397) }
+            
+            public override ToString(): string { String.Format("[{0}, {1}]", Id, SubId) }
+            

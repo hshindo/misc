@@ -1,0 +1,88 @@
+﻿#pragma indent
+using System
+using Nemerle.Imperative
+
+namespace Haplon.Numerics.Statistics
+    
+    // Neal, R. M. (2003). Slice sampling. Annals of statistics, 705-741.
+    // Implementation of "doubling procedure".
+    public class SliceSampler
+        LogF: double -> double
+        mutable X: double
+        mutable LogY: double
+        MaxX: double
+        MinX: double
+        mutable Width = 0.01
+        mutable XL = 0.0
+        mutable XR = 0.0
+        
+        public this(logF: double -> double, x0: double, minX: double = Double.MinValue, maxX: double = Double.MaxValue)
+            LogF = logF
+            X = x0
+            MinX = minX
+            MaxX = maxX
+            
+        public Next(): double
+            LogY = LogF(X) + Math.Log(Random.Generator.NextDouble() + 1e-100)
+            FindRange()
+            def x = Shrink()
+            if (x >= MinX && x <= MaxX)
+                Width = Math.Abs(X - x)
+                X = x
+                X
+            else throw Exception("x is invalid range")
+            
+        /// p.11 Figure 4
+        FindRange(): void
+            mutable l = Math.Max(X - Width * Random.Generator.NextDouble(), MinX)
+            mutable r = Math.Min(l + Width, MaxX)
+            mutable w = Width
+            while (LogY < LogF(l))
+                l -= w
+                when (l < MinX)
+                    l = MinX
+                    break
+                w *= 2.0
+                
+            w = Width
+            while (LogY < LogF(r))
+                r += w
+                when (r > MaxX)
+                    r = MaxX
+                    break
+                w *= 2.0
+            (XL, XR) = (l, r)
+            
+        /// p.13 Figure 5
+        Shrink(): double
+            mutable x = 0.0
+            mutable b = true
+            while (b)
+                x = XL + Random.Generator.NextDouble() * (XR - XL)
+                when (LogY < LogF(x) && Check(x)) b = false
+                if (x < X) XL = x
+                else XR = x
+            x
+            
+        /// p.13 Figure 6
+        Check(x: double): bool
+            mutable (l, r) = (XL, XR)
+            while ((r - l) > 1.1 * Width)
+                def m = (l + r) / 2.0
+                def d = (X < m && x >= m) || (X >= m && x < m)
+                if (x < m) r = m
+                else l = m
+                when (d && LogY >= LogF(l) && LogY >= LogF(r)) return false
+            true
+
+        public static Test(): void
+            def (m1, m2, v, pi) = (0.0, 10.0, 3.0, 0.2)
+            def f(x)
+                def y1 = Math.Exp(-(x - m1) * (x - m1) / (2.0 * v)) + 1e-100
+                def y2 = Math.Exp(-(x - m2) * (x - m2) / (2.0 * v)) + 1e-100
+                Math.Log(pi * y1 + (1.0 - pi) * y2)
+            
+            def s = SliceSampler(f, 0.0, Double.MinValue, Double.MaxValue)
+            repeat (1000)
+                def x = s.Next()
+                Console.WriteLine("{0}", x)

@@ -1,0 +1,159 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using Haplon.Collections
+using Haplon.Numerics
+using Haplon.Numerics.Statistics
+using Haplon.NLP.Resources
+using Nemerle.Imperative
+using MathNet.Numerics.Distributions
+
+namespace Haplon.NLP.Grammars
+
+    public class TSG
+        LabelTable: IdTable[string] = IdTable()
+        ObsTrees: array[TreeNode[Symbol]]
+        NontermCount: int
+        TermCount: int
+        TreeTable: IdTable[TreeNode[Symbol]] = IdTable(TreeComparer())
+        BaseTable: IdTable[TreeNode[int]] = IdTable(TreeComparer())
+        
+        TreeDists: array[PYCRP] // nonterm -> PYCRP
+        BaseProbs: array[double] // CFG id -> prob
+        StopProbs: array[double] // nonterm -> stop
+        
+        public this(data: array[TreeNode[string]])
+            ObsTrees = data.Map(t => t.MapAll(Symbol))
+            ObsTrees.Iter(t => t.Topdown.NonLeaf().Iter(n => n.Value.Id = LabelTable.Add(n.Value.Label)))
+            NontermCount = LabelTable.Count
+            ObsTrees.Iter(t => t.Leaves.Iter(n => n.Value.Id = LabelTable.Add(n.Value.Label)))
+            TermCount = LabelTable.Count - NontermCount
+            
+            def tabs = $[1 .. NontermCount].MapToArray(_ => IdTable())
+            def nodes = ObsTrees.FlatMap(t => t.Bottomup).NonLeaf()
+            foreach (n in nodes)
+                def id = BaseTable.Add(n.ToCFG(n => n.Value.Id))
+                n.Value.CFGId = id
+                _ = tabs[n.Value.Id].Add(id)
+            BaseProbs = array(BaseTable.Count)
+            foreach (id in BaseTable.Ids)
+                def tree = BaseTable[id]
+                def tab = tabs[tree.Value]
+                BaseProbs[id] = tab.CountOf(tab.ToId(id)) / tab.Total: double
+                
+            TreeDists = $[1 .. NontermCount].MapToArray(_ => PYCRP(BaseProb))
+            StopProbs = $[1 .. NontermCount].MapToArray(_ => 0.5)
+            
+            def init(node: TreeNode[Symbol])
+                def id = TreeTable.Add(node.Clone(n => n.Value.IsSub))
+                node.Value.TreeId = id
+                ToTreeDist(id).Add(id)  
+            nodes.Filter(n => n.IsRoot || Random.Generator.Next(2) == 1).Iter(init) // random init
+            //nodes.Iter(init) // CFG init
+            
+        public Gibbs(iterCount: int): void
+            def nodes = ObsTrees.FlatMap(t => t.Topdown).Filter(n => !n.Value.IsFixed).ToArray()
+            foreach (iter in [0 .. iterCount - 1])
+                when (iter % 1 == 0) Update()
+                PrintLog(iter)
+                nodes.Shuffle()
+                nodes.Iter(Sample)
+            PrintLog(iterCount)
+        
+        public Parse(): void
+            Update()
+            def trees = TreeTable.Ids.Map(id => {
+                def tree = TreeTable[id];
+                def dist = ToTreeDist(id);
+                def t = tree.MapAll(n => LabelTable[n.Value.Id]);
+                (t, dist.Prob(id))
+            })
+            def bases = BaseTable.Ids.Map(id => {
+                def tree = BaseTable[id];
+                def dist = TreeDists[tree.Value];
+                def p = BaseProbs[id] * dist.BackoffWeight;
+                def t = tree.MapAll(n => LabelTable[n.Value]);
+                (t, p)
+            })
+            _ = BubsParser(trees.Append(bases))
+            
+        BaseProb(id: int): double
+            assert(!TreeTable[id].IsLeaf)
+            mutable p = 1.0
+            foreach (n in TreeTable[id].Topdown)
+                if (n.IsLeaf)
+                    when (n.Value.Id < NontermCount) p *= StopProbs[n.Value.Id]
+                else
+                    def bp = BaseProbs[n.Value.CFGId]
+                    if (n.IsRoot) p *= bp
+                    else p *= (bp * (1.0 - StopProbs[n.Value.Id]))
+            assert(p >= 0.0 && p <= 1.00001)
+            Math.Min(1.0, p)
+            
+        PrintLog(iter: int): void
+            when (iter == 0)
+                Console.WriteLine("# Tree: {0}", ObsTrees.Length)
+                Console.WriteLine("# Nonterminal: {0}", NontermCount)
+                Console.WriteLine("# Terminal: {0}", TermCount)
+            when (iter % 1 == 0)
+                def likelihood = TreeDists.Sum(d => d.LogLikelihood())
+                def size = String.Format("{0:0.00}", TreeTable.Ids.Sum(n => TreeTable[n].Size()) / TreeTable.Count: double)
+                Console.WriteLine($"$(iter)\t$(TreeTable.Count)\t$(size)\t$(likelihood)")
+                
+        Sample(node: TreeNode[Symbol]): void
+            def par = node.Ancestors.Find(it => it.Value.IsSub).Value
+            def surround() { if (node.Value.IsSub) array[par, node] else array[par] }
+            def candIds = array(2)
+            candIds[0] = surround().Map(n => n.Value.TreeId)
+            candIds[0].Iter(id => ToTreeDist(id).Remove(id))
+            
+            node.Value.TreeId = if (node.Value.IsSub) -1 else 0 // flip substitution site
+            candIds[1] = surround().Map(n => n.Clone(n => n.Value.IsSub)).Map(TreeTable.Add)
+            
+            def index = candIds.Map(ids => ids.Product(id => ToTreeDist(id).Prob(id))).Sample()
+            //def index = 0
+            def idset = candIds[index]
+            
+            idset.Iter(id => ToTreeDist(id).Add(id))
+            candIds[Math.Abs(index - 1)].Iter(TreeTable.Remove)
+            par.Value.TreeId = idset[0]
+            node.Value.TreeId = if (idset.Length == 1) -1 else idset[1]
+                
+        ToTreeDist(id: int): PYCRP { TreeDists[TreeTable[id].Value.Id] }
+            
+        Update(): void
+            TreeDists.Iter(d => d.Update())
+            def stops = array(NontermCount)
+            def nonstops = array(NontermCount)
+            foreach (id in TreeTable.Ids)
+                def dist = ToTreeDist(id)
+                def c = dist[id].TableCount
+                def nodes = TreeTable[id].Topdown.Filter(n => !n.IsRoot && n.Value.Id < NontermCount)
+                foreach (n in nodes)
+                    if (n.IsLeaf) stops[n.Value.Id] += c
+                    else nonstops[n.Value.Id] += c
+            foreach (i in StopProbs.Indices()) StopProbs[i] = Beta(1.0 + stops[i], 1.0 + nonstops[i]).Sample()
+
+        class Symbol
+            public Label: string
+            public Id: int { get; set; }
+            public IsFixed: bool { get; set; }
+            public CFGId: int { get; set; }
+            public TreeId: int { get; set; }
+            public IsSub: bool { get TreeId >= 0 }
+            
+            public this(node: TreeNode[string])
+                Label = node.Value
+                IsFixed = node.IsRoot || node.Parent.IsRoot || node.IsLeaf
+                Id = -1
+                CFGId = -1
+                TreeId = -1
+            
+            public override Equals(o: object): bool
+                match(o)
+                    | s is Symbol => Id == s.Id
+                    | _ => false
+                    
+            public override GetHashCode(): int { Id }
+            
+            public override ToString(): string { Label }
