@@ -1,0 +1,20 @@
+// D. Wilson, "Generating Random Spanning Trees More Quickly than the Cover Time", 1996
+// written in Nemerle
+static InitRandom(count: int): array[int]
+	def used = Array.Init(count, _ => false)
+        def heads = Array.Init(count, _ => -1)
+        used[0] = true
+        
+        // loop-erased random walk
+        for (mutable i = 0; i < count; i++)
+            mutable u = i
+            while (!used[u])
+                heads[u] = Rand.Next(count)
+                u = heads[u]
+            u = i
+            while (!used[u])
+                used[u] = true
+                u = heads[u]
+                
+        assert (heads.Count(h => h < 0) == 1)
+        heads

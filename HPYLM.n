@@ -1,0 +1,118 @@
+﻿// Hierarchical Pitman-Yor Language Model written in Nemerle
+#pragma indent
+
+using System
+using System.Collections.Generic
+using Haplon.Collections
+using Haplon.Numerics.Statistics
+using Nemerle.Imperative
+
+namespace Haplon.NLP
+    
+    public class HPYLM
+        BOS: int = -1
+        Root: Node // unigram
+        public Count: int { get; private set; }
+
+        public this()
+            Root = Node(null, BOS)
+
+        public Add(data: Seq[int], order: int): void
+            assert(order >= 0)
+            def context = array(order) // data[i-1], data[i-2], ...
+            for (mutable i = 0; i < context.Length; i++) context[i] = BOS
+            foreach (word in data)
+                FindNode(context, true).Add(word)
+                Count++
+                for (mutable i = context.Length - 1; i >= 1; i--) context[i] = context[i - 1]
+                when (context.Length > 0) context[0] = word
+            
+        public LogLikelihood(): double
+            Root.Leaves.Sum(it => it.CRP.LogLikelihood())
+            
+        public Prob(word: int, context: Seq[int]): double
+            //FindNode(context, false).CRP.Prob(word)
+            0.0
+
+        public Remove(data: Seq[int], order: int): void
+            def context = array(order) // data[i-1], data[i-2], ...
+            for (mutable i = 0; i < context.Length; i++) context[i] = BOS
+            foreach (word in data)
+                def node = FindNode(context, false)
+                assert(node.Depth == order)
+                node.Remove(word)
+                Count--
+                for (mutable i = context.Length - 1; i >= 1; i--) context[i] = context[i - 1]
+                when (context.Length > 0) context[0] = word
+            
+        public Update(): void
+            Root.Topdown.Iter(it => it.CRP.Update())
+                
+        FindNode(context: array[int], append: bool): Node
+            mutable node = Root
+            foreach (c in context)
+                mutable child
+                when (!node.Children.TryGetValue(c, out child))
+                    when (!append) return node
+                    child = Node(node, c)
+                    node.Children.Add(c, child)
+                node = child
+            node
+            
+        public static Test(path: string): void
+            def source = IO.File.ReadLines(path)
+            def table = IdTable()
+            def data = source.Map(it => it.Split(' ').Map(table.Add)).ToArray()
+            Console.WriteLine($"#sentence:\t$(data.Length)")
+            def lm = HPYLM()
+            data.Iter(it => lm.Add(it, 1))
+            Console.WriteLine($"#word:\t$(lm.Count)")
+            
+            // gibbs
+            foreach (i in [0 .. 1000])
+                when (i % 10 == 0)
+                    Console.WriteLine($"$(i)\t$(lm.LogLikelihood())")
+                    lm.Update()
+                data.Iter(it => lm.Remove(it, 1))
+                data.Iter(it => lm.Add(it, 1))
+                         
+        class Node
+            public Parent: Node
+            public CRP: PYCRP
+            public Context: int
+            public Depth: int
+            public Children: Dictionary[int, Node] = Dictionary()
+            
+            public Topdown: Seq[Node]
+                get
+                    yield this
+                    foreach (c in Children.Values)
+                        foreach (gc in c.Topdown) yield gc
+            public Leaves: Seq[Node]
+                get
+                    if (Children.Count == 0) yield this
+                    else
+                        foreach (ch in Children.Values)
+                            foreach (l in ch.Leaves) yield l
+            
+            public this(parent: Node, context: int)
+                Parent = parent
+                Context = context
+                if (Parent == null)
+                    Depth = 0
+                    CRP = PYCRP()
+                else
+                    Depth = Parent.Depth + 1
+                    CRP = PYCRP(w => Parent.CRP.Prob(w))
+            
+            public Add(word: int): void
+                def t = CRP.TableCount
+                CRP.Add(word)
+                when (t < CRP.TableCount && Parent != null) Parent.Add(word)
+                
+            public Remove(word: int): void
+                def t = CRP.TableCount
+                CRP.Remove(word)
+                when (Parent != null)
+                    when (t > CRP.TableCount) Parent.Remove(word)
+                    when (CRP.CustomerCount == 0) _ = Parent.Children.Remove(Context)
