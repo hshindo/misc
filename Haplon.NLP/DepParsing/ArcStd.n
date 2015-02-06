@@ -1,0 +1,41 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.Linq
+using Nemerle.Imperative
+using Haplon.Collections.Immutable
+using Haplon.NLP.Transition
+
+namespace Haplon.NLP.DepParsing
+    
+    public struct Action
+        public D: int
+        public H: int
+        public L: int
+
+    public class State
+        Root: Tree[int]
+        Left: State
+        Right: int
+        //Tokens: array[Token]
+        
+        public this(root: Tree[int], left: State, right: int)
+            (Root, Left, Right) = (root, left, right)
+        
+        public Next(act: Action): State
+            if (act.D < act.H)
+                def root = Tree(act.H, array[Left.Root, Root])
+                State(root, Left.Left, Right)
+            else if (act.H < act.D)
+                def root = Tree(act.H, array[Left.Root, Root])
+                State(root, Left.Left, Right)
+            else null
+            
+            //match (act.X)
+            //    | Action.Shift when (Right < Tokens.Length) => State(Right, this, Right + 1, Int2(-1, -1), Int2(-1, -1), this)
+            //    | Action.ReduceL when (Left != null) => State(Top, Left.Left, Right, Int2(Left.Top, act.Y), RMod, this)
+            //    | Action.ReduceR when (Left != null) => State(Left.Top, Left.Left, Right, Left.LMod, Int2(Top, act.Y), this)
+            //    | _ => null
+            
+        public ToTree(act: int): void
+            ()

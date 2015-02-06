@@ -1,0 +1,34 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.Linq
+using Nemerle.Imperative
+
+namespace Haplon.NLP.Transition
+    
+    public class BeamSearch[S] where S: IState[S]
+        type Node = Node[S]
+        BeamSize: int
+        WeightVec: array[double]
+        
+        public Search(input: S): Node
+            mutable kbest = List(BeamSize)
+            Node(-1, input, 0.0, array[], null) |> kbest.Add
+            while (kbest.Count > 0 && !kbest[0].St.IsFinal)
+                kbest = Expand(kbest)
+            kbest[0]
+            
+        Expand(source: List[Node]): List[Node]
+            def temp = List()
+            foreach (node in source)
+                foreach (act in node.St.NextActs())
+                    def fs = node.St.GetFeats(act)
+                    def w = fs.Sum(f => WeightVec[f])
+                    (node, act, fs, w) |> temp.Add
+            temp.Sort((x, y) => y.Weight.CompareTo(x.Weight))
+
+            def dest = List(BeamSize)
+            foreach ((node, act, fs, w) in temp)
+                node.Next(act, fs, w) |> dest.Add
+                when (dest.Count == BeamSize) break
+            dest

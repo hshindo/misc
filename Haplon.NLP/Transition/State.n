@@ -1,0 +1,17 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.Linq
+using Nemerle.Imperative
+
+namespace Haplon.NLP.Transition
+    
+    public interface IState[S]
+        IsFinal: bool { get }
+        Next(act: int): S
+
+    public class Node[S]
+        public Act: int
+        public Feats: array[int]
+        public Weight: double
+        public St: S
