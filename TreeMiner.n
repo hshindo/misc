@@ -1,0 +1,67 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.Linq
+using Nemerle.Imperative
+using Haplon.Collections
+
+namespace Haplon.DataMining
+
+    public module TreeMiner
+        
+        public Test(): void
+            def path = @"data"
+            def tab = IdTable()
+            def conv(line: string) { Tree.Parse(line).MapAll(n => tab.Add(n.Val)) }
+            def data = IO.File.ReadLines(path).Select(conv).ToArray()
+            Run(data)
+    
+        public Run(data: array[Tree[int]]): void
+            def pat = Pattern(-1)
+            for (mutable i = 0; i < data.Length; i++)
+                foreach (node in data[i].Topdown) pat.Positions.Add(i, node)
+                
+            def pats = List()
+            def stack = Stack()
+            stack.Push(Tree(pat))
+            while (stack.Count > 0)
+                def item = stack.Pop()
+                pats.Add(item.Val)
+                def nexts = Expand(item.Val).Select(p => Tree(p))
+                item.UpdateChildren(l => l.AddRange(nexts))
+                foreach (c in item.GetChildren()) stack.Push(c)
+                
+            Console.WriteLine(pats.Count - 1)
+                
+        Expand(pattern: Pattern): IEnumerable[Pattern]
+            def cands = Dictionary()
+            foreach ((id, depth, node) in pattern.Expand())
+                def key = (depth, node.Val)
+                mutable val: Pattern
+                when (!cands.TryGetValue(key, out val))
+                    val = Pattern(depth)
+                    cands.Add(key, val)
+                val.Positions.Add(id, node)
+                
+            cands.Values.Where(p => p.Count >= 7)
+        
+        class Pattern
+            Depth: int // depth of the right-most node
+            public Positions: List[int * Tree[int]] = List()
+            
+            public Count: int { get Positions.Count }
+            
+            public this(depth: int) { Depth = depth }
+            
+            public Expand(): IEnumerable[int * int * Tree[int]]
+                if (Depth < 0) // initial pattern
+                    foreach ((id, node) in Positions) yield (id, 0, node)
+                else
+                    foreach ((id, rmnode) in Positions)
+                        mutable (d, node) = (Depth, rmnode)
+                        when (!node.IsLeaf) (d, node) = (d + 1, node[0])
+                        while (d > 0)
+                            def pos = if (d > Depth) 0 else node.Position() + 1
+                            for (mutable i = pos; i < node.Parent.Count; i++) yield (id, d, node.Parent[i])
+                            node = node.Parent
+                            d--
