@@ -1,0 +1,97 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.Linq
+using Nemerle.Imperative
+
+namespace Haplon.Collections
+    
+    public class IdTable[T]
+        KeyToId: Dictionary[T, int]
+        IdToKey: List[T] = List()
+        IdToCount: List[int] = List()
+        OpenIds: Queue[int] = Queue()
+        
+        public Count: int { get KeyToId.Count }
+        public Ids: IEnumerable[int]
+            get
+                foreach (i in [0 .. Size - 1])
+                    when (ContainsId(i)) yield i
+        public Keys: IEnumerable[T] { get Ids.Select(it => this[it]) }
+        public Item[id: int]: T { get IdToKey[id] }
+        public Size: int { get IdToKey.Count }
+        public Total: int { get; private set; }
+
+        public this() { this(EqualityComparer[T].Default) }
+        public this(comparer: IEqualityComparer[T]) { KeyToId = Dictionary(comparer) }
+        
+        public Add(key: T): int { Add(key, 1) }
+        public Add(key: T, count: int): int
+            assert(count >= 1)
+            mutable id = -1
+            when (!KeyToId.TryGetValue(key, out id))
+                if (OpenIds.Count > 0)
+                    id = OpenIds.Dequeue()
+                    IdToKey[id] = key
+                else
+                    id = Count
+                    IdToKey.Add(key)
+                KeyToId.Add(key, id)
+            if (id == IdToCount.Count) IdToCount.Add(count)
+            else IdToCount[id] += count
+            Total += count
+            id
+            
+        public ContainsId(id: int): bool { id >= 0 && id < Size && CountOf(id) > 0 }
+        public ContainsKey(key: T): bool { KeyToId.ContainsKey(key) }
+        
+        public CountOf(id: int): int { IdToCount[id] }
+        
+        public Delete(id: int): void { RemoveMany(id, CountOf(id)) }
+        
+        public Read(path: string, decode: string -> T): void
+            mutable i = 0
+            foreach (line in IO.File.ReadLines(path))
+                if (line.Length == 0)
+                    OpenIds.Enqueue(i)
+                else
+                    def items = line.Split('\t')
+                    def key = decode(items[0])
+                    KeyToId.Add(key, i)
+                    IdToKey.Add(key)
+                    IdToCount.Add(int.Parse(items[1]))
+                i++
+        
+        public Remove(id: int): void { RemoveMany(id, 1) }
+        public RemoveMany(id: int, count: int): void
+            assert(count <= CountOf(id))
+            IdToCount[id] -= count
+            Total -= count
+            when (IdToCount[id] == 0)
+                _ = KeyToId.Remove(this[id])
+                OpenIds.Enqueue(id)
+               
+        public Trim(): void
+            mutable i = Size
+            while (!ContainsId(i)) i--
+            IdToKey.RemoveRange(i + 1, IdToKey.Count - i - 1)
+            IdToCount.RemoveRange(i + 1, IdToCount.Count - i - 1)
+            assert(IdToKey.Capacity == IdToCount.Capacity)
+                
+        public ToFreqs(): array[double]
+            assert(Total > 0)
+            $[0 .. Count - 1].MapToArray(it => (CountOf(it): double) / Total)
+            
+        public ToId(key: T): int
+            if (ContainsKey(key)) KeyToId[key]
+            else -1
+        
+        public Write(path: string): void
+            Trim()
+            def lines = array(Size)
+            for (mutable i = 0; i < Size; i++)
+                if (ContainsId(i))
+                    def line = String.Format("{0}\t{1}", this[i], CountOf(i))
+                    lines[i] = line
+                else lines[i] = ""
+            IO.File.WriteAllLines(path, lines)

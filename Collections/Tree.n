@@ -1,0 +1,95 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using System.Linq
+using Nemerle.Imperative
+using Nemerle.Peg
+
+namespace Haplon.Collections
+
+    public class Tree2[T]
+        Data: List[Node]
+        
+        public struct Node
+            public Val: T
+            public Parent: int
+            public Child: int
+
+    public class Tree[T]
+        public Val: T
+        public Parent: Tree[T] { get; private set; }
+        Children: List[Tree[T]] = List()
+        static Parser: TreeBuilder.Parser = TreeBuilder.Parser()
+        
+        public Ancestors: IEnumerable[Tree[T]]
+            get
+                when (!IsRoot)
+                    yield Parent
+                    foreach (a in Parent.Ancestors) yield a
+        public Bottomup: IEnumerable[Tree[T]]
+            get
+                foreach (c in Children)
+                    foreach (gc in c.Bottomup) yield gc
+                yield this
+        public Count: int { get Children.Count }
+        public IsLeaf: bool { get Count == 0 }
+        public IsRoot: bool { get Parent == null }
+        public Item[index: int]: Tree[T] { get Children[index] }
+        public Leaves: IEnumerable[Tree[T]] { get Topdown.Where(n => n.IsLeaf) }
+        public Topdown: IEnumerable[Tree[T]]
+            get
+                yield this
+                foreach (c in Children)
+                    foreach (gc in c.Topdown) yield gc
+                
+        public this(val: T) { this(val, List()) }
+        public this(val: T, children: IEnumerable[Tree[T]])
+            Val = val
+            Children = children.ToList()
+            for (mutable i = 0; i < Count; i++) this[i].Parent = this
+            
+        public GetChildren(): IList[Tree[T]] { Children.AsReadOnly() }
+            
+        public UpdateChildren(action: List[Tree[T]] -> void): void
+            action(Children)
+            Children.ForEach(c => c.Parent = this)
+            
+        public Map[U](f: Tree[T] -> U, stop: Tree[T] -> bool): Tree[U]
+            def kids = Children.ConvertAll(c => if (stop(c)) Tree(f(c)) else c.Map(f, stop)) 
+            Tree(f(this), kids)
+        public MapAll[U](f: Tree[T] -> U): Tree[U] { Map(f, _ => false) }
+        
+        public Position(): int
+            mutable i = 0
+            while (!ReferenceEquals(Parent[i], this)) i++
+            i
+        
+        public override ToString(): string { ToString(v => v.ToString()) }
+        public ToString(f: T -> string): string
+            if (IsLeaf) f(Val)
+            else
+                def s = String.Join(" ", Children.ConvertAll(c => c.ToString(f)))
+                String.Format("[{0} {1}]", f(Val), s)
+                
+        public static Parse(text: string): Tree[string]
+            match (Parser.Parse(text))
+                | option.Some(t) => t
+                | option.None => throw Exception("Invalid text.")
+        
+namespace Haplon.Collections.TreeBuilder {
+    
+    [PegGrammar(Options = EmitDebugSources, Nonterminal, grammar {
+        Symbol = (!' ' !'(' !')' [Any])+;
+        Open = ' '* '(';
+        Close = ')' ' '*;
+        Terminal: Tree[string] = ' '+ Symbol;
+        Nonterminal: Tree[string] = Open Symbol (Nonterminal / Terminal)* Close;
+    })]
+    
+    class Parser {
+        
+        Terminal(_: NToken, value: NToken): Tree[string] { Tree(GetText(value)) }
+        
+        Nonterminal(_: NToken, value: NToken, children: List[Tree[string]], _: NToken): Tree[string] { Tree(GetText(value), children) }
+    }
+}
