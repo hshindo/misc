@@ -1,0 +1,23 @@
+﻿#pragma indent
+using System
+using System.Collections.Generic
+using HaploLab.Collections
+using MathNet.Numerics
+
+namespace HaploLab.Numerics
+    
+    module Math
+	    /// <summary> Computes the log of generalized factorial function. 
+	    /// Generalized factorial: [a, b]_c = a(a+b)...(a+(c-1)b) = b^c * Γ(a/b+c) / Γ(a/b).
+	    /// </summary>
+        public LogFactorial(a: double, b: double, c: double): double
+            if (c <= 0.0) 0.0
+            else c * Math.Log(b) + SpecialFunctions.GammaLn(a / b + c) - SpecialFunctions.GammaLn(a / b)
+	        
+	    /// <summary> Computes log(exp x + exp y) </summary>
+        public LogSumExp(x: double, y: double): double
+            if (x < y)
+                if (x + 50.0 < y) y
+                else y + Math.Log(Math.Exp(x - y) + 1.0)
+            else if (x == y) x + 0.69314718055 // log 2
+            else LogSumExp(y, x)
